@@ -232,8 +232,11 @@ function minusDays(reportInt, days){
 
 /* ====== 歷史 localStorage（每報告各一份）====== */
 const HKEY="fresh_inv_v3";
+const CKEY="fresh_inv_current_v1";   // 當週明細（分店/TOP/支數）持久化
 function loadAll(){ try{const r=localStorage.getItem(HKEY); if(r) return JSON.parse(r);}catch(e){} const init=JSON.parse(JSON.stringify(SEEDS)); saveAll(init); return init; }
 function saveAll(h){ try{localStorage.setItem(HKEY,JSON.stringify(h));}catch(e){} }
+function saveCurrentLocal(){ try{ localStorage.setItem(CKEY,JSON.stringify(CURRENT)); }catch(e){} }
+function loadCurrentLocal(){ try{ const r=localStorage.getItem(CKEY); if(r){ const c=JSON.parse(r); ORDER.forEach(k=>{ if(c[k]) CURRENT[k]=c[k]; }); } }catch(e){} }
 function sortH(h){ return h.slice().sort((a,b)=> new Date(a.date.replace(/\//g,'-')) - new Date(b.date.replace(/\//g,'-'))); }
 function upsert(report,date,byCat){
   const all=loadAll(); let h=(all[report]||[]).filter(r=>r.date!==date);
@@ -269,13 +272,16 @@ async function loadFromCloud(){
     const all=loadAll();
     for(const r of ORDER){
       const snap=await docRef(r).get();
-      if(snap.exists && Array.isArray((snap.data()||{}).weeks)){
+      if(!snap.exists) continue;
+      const d=snap.data()||{};
+      if(Array.isArray(d.weeks)){
         const byDate={}; (all[r]||[]).forEach(x=>byDate[x.date]=x);     // 以日期合併，雲端優先
-        snap.data().weeks.forEach(x=>{ const d=ndClient(x.date); const row={date:d}; SECS.forEach(s=>row[s]=Number(x[s])||0); byDate[d]=row; });
+        d.weeks.forEach(x=>{ const dt=ndClient(x.date); const row={date:dt}; SECS.forEach(s=>row[s]=Number(x[s])||0); byDate[dt]=row; });
         all[r]=sortH(Object.values(byDate));
       }
+      if(d.current) CURRENT[r]=d.current;                                // 還原當週明細
     }
-    saveAll(all); render(); if(document.getElementById("panel").classList.contains("open")) renderHist();
+    saveAll(all); saveCurrentLocal(); render(); if(document.getElementById("panel").classList.contains("open")) renderHist();
     setStatus(USER.email||"已同步");
   }catch(e){ setStatus("雲端讀取失敗，用本機資料"); render(); }
 }
@@ -283,7 +289,9 @@ async function pushReport(r){
   if(!USER||!DB) return;
   const all=loadAll();
   const weeks=(all[r]||[]).map(x=>{ const o={date:x.date}; SECS.forEach(s=>o[s]=x[s]||0); return o; });
-  await docRef(r).set({weeks});
+  const payload={weeks};
+  if(CURRENT[r]) payload.current=CURRENT[r];      // 連同當週明細一起存（有才寫，避免清掉）
+  await docRef(r).set(payload,{merge:true});
 }
 async function pushAll(){          // 上傳當週後 / 手動推送：把三報告完整歷史寫回雲端
   if(!USER){ return; }
@@ -529,8 +537,9 @@ document.getElementById("file").addEventListener("change",e=>{
       let date; if(di){const p=di.split("-");date=(+p[0])+"/"+(+p[1])+"/"+(+p[2]);}
       else{const d=new Date();date=d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();}
       CURRENT=processMaster(rows,date);
+      saveCurrentLocal();
       buildTabs(); render(); if(document.getElementById("panel").classList.contains("open"))renderHist();
-      pushWeek();   // 已登入則把當週資料寫回 Firestore（未登入則跳過）
+      pushWeek();   // 已登入則把當週資料＋歷史寫回 Firestore（未登入則跳過）
     }catch(err){ document.getElementById("status").textContent="解析失敗"; alert("解析失敗："+err.message); }
   };
   reader.readAsArrayBuffer(f);
@@ -546,7 +555,7 @@ document.getElementById("cloudBtn").onclick=()=>bootstrapToCloud();
 document.getElementById("authBtn").onclick=()=>{ USER?signOut():signIn(); };
 
 document.getElementById("date").value="2026-05-31";
-buildTabs(); render(); fbInit();
+loadCurrentLocal(); buildTabs(); render(); fbInit();
 </script>
 </body>
 </html>
