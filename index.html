@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生鮮異常庫存週報</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#23282b; --line:#00606E; --line2:#0A8090; --muted:#8a949a; --grid:#e3e7e9;
+    --bg:#F4F2EC; --panel:#ffffff; --soft:#fbfaf6;
+    --font:"Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei","PingFang TC","Heiti TC",sans-serif;
+    --latin:"Noto Sans TC","Noto Sans CJK TC",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); font-family:var(--font); color:var(--ink); -webkit-font-smoothing:antialiased;}
+
+  .controls{
+    position:sticky; top:0; z-index:50; background:rgba(255,255,255,.92); backdrop-filter:blur(8px);
+    border-bottom:1px solid #e6e2d8; padding:12px 22px; display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+    box-shadow:0 2px 14px rgba(0,40,50,.05);
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.15; margin-right:6px;}
+  .brand b{font-size:15px; font-weight:800; color:var(--line); letter-spacing:.5px;}
+  .brand span{font-size:10.5px; color:var(--muted); letter-spacing:1.5px; font-family:var(--latin); font-weight:600;}
+  .tabs{display:flex; gap:4px; background:#ece8de; padding:4px; border-radius:11px;}
+  .tab{border:none; background:transparent; padding:8px 16px; border-radius:8px; font-family:var(--font);
+    font-size:13px; font-weight:700; color:#6b7479; cursor:pointer; transition:.18s;}
+  .tab:hover{color:var(--line);}
+  .tab.active{background:var(--line); color:#fff; box-shadow:0 2px 8px rgba(0,96,110,.28);}
+  .spacer{flex:1;}
+  .btn{border:none; border-radius:9px; padding:9px 15px; font-family:var(--font); font-size:12.5px;
+    font-weight:700; cursor:pointer; transition:.15s; color:#fff; background:var(--line);}
+  .btn:hover{filter:brightness(1.08); transform:translateY(-1px);}
+  .btn.ghost{background:#fff; color:var(--line); border:1.5px solid #cfe0e2;}
+  .btn.ghost:hover{background:#f0f8f9;}
+  .btn.sec{background:#5a676c;}
+  input[type=date]{border:1.5px solid #d8d2c4; border-radius:9px; padding:7px 10px; font-family:var(--font); font-size:12.5px; background:#fff;}
+  .filechip{font-size:11.5px; color:var(--muted); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .status{font-size:11.5px; color:var(--line2); font-weight:700;}
+
+  .panel{background:#fff; border-bottom:1px solid #e6e2d8; padding:0 22px; max-height:0; overflow:hidden; transition:max-height .25s, padding .25s;}
+  .panel.open{max-height:430px; padding:16px 22px; overflow:auto;}
+  .panel h2{font-size:12.5px; margin-bottom:10px; color:var(--line);}
+  .htable{width:100%; border-collapse:collapse; font-size:11.5px;}
+  .htable th,.htable td{border-bottom:1px solid #eee; padding:5px 8px; text-align:right; font-variant-numeric:tabular-nums;}
+  .htable th:first-child,.htable td:first-child{text-align:left;}
+  .htable th{color:var(--muted); font-weight:600;}
+  .htable .del{color:#BB3E03; cursor:pointer; font-weight:800; text-align:center;}
+  .panel .acts{margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;}
+
+  .stage{padding:26px 0 70px; display:flex; flex-direction:column; align-items:center; gap:24px;}
+  .holder{position:relative;}
+  .slide{position:relative; width:13.333in; height:7.5in; background:#fff; transform-origin:top left;
+    border-radius:10px; box-shadow:0 10px 34px rgba(0,40,50,.13); overflow:hidden;}
+  .slide .ttl{position:absolute; left:.6in; top:.3in; font-size:28pt; font-weight:900; letter-spacing:.5px;}
+  .slide .rule{position:absolute; left:.6in; top:1.16in; width:12.13in; height:2.5pt;
+    background:linear-gradient(90deg,var(--line),var(--line2));}
+  .slide .unit{position:absolute; font-size:11.5pt; color:#5a676c;}
+  .slide .foot{position:absolute; left:.6in; top:7.06in; font-size:8.5pt; color:#b7bcc0; letter-spacing:.3px;}
+  .slide .pg{position:absolute; right:.5in; top:6.95in; font-size:16pt; font-weight:800; color:var(--line); font-family:var(--latin);}
+
+  .fbox{position:absolute; font-size:12.5pt; line-height:1.5; color:#2c3236;}
+  .fbox b{font-weight:800; color:var(--line);}
+  .fbox .note{color:var(--muted); font-size:11pt;}
+
+  .legend{position:absolute; display:flex; flex-wrap:wrap; gap:6px 16px; font-size:10.5pt;}
+  .legend .it{display:flex; align-items:center; gap:5px;}
+  .legend .sw{width:13px; height:13px; border-radius:3px; display:inline-block;}
+
+  .chart{position:absolute; display:grid; align-items:end;}
+  .chart .barwrap{position:relative; height:100%; display:flex; flex-direction:column; justify-content:flex-end;}
+  .chart .bar{position:relative; margin:0 auto; width:64%; display:flex; flex-direction:column-reverse; height:100%; border-radius:3px 3px 0 0; overflow:hidden;}
+  .chart .seg{display:flex; align-items:center; justify-content:center; font-size:10pt; font-weight:700; overflow:hidden; line-height:1;}
+  .xrow{position:absolute; display:grid; font-size:11.5pt; font-weight:700; text-align:center; color:#3a4145;}
+  .trow{position:absolute; display:grid; font-size:11.5pt; font-weight:800; text-align:center; align-items:center;}
+  .trow .lbl{text-align:left;}
+  .trow .cell{font-variant-numeric:tabular-nums; color:var(--line);}
+
+  .cover{background:var(--soft);}
+  .cover .band{position:absolute; left:0; top:0; width:.32in; height:7.5in; background:linear-gradient(180deg,var(--line),var(--line2));}
+  .cover .kicker{position:absolute; left:1.1in; top:2.5in; font-size:12pt; letter-spacing:4px; color:var(--line2); font-weight:700; font-family:var(--latin);}
+  .cover .ct{position:absolute; left:1.05in; top:2.95in; font-size:44pt; font-weight:900; color:var(--ink); letter-spacing:1px;}
+  .cover .cd{position:absolute; left:1.1in; top:4.15in; font-size:20pt; color:var(--muted);}
+  .cover .ag{position:absolute; left:1.1in; top:5.4in; font-size:15pt; line-height:1.8; color:#3a4145;}
+  .cover .ag .dot{color:var(--line2); font-weight:800;}
+
+  .ttbl{position:absolute; border-collapse:collapse; font-size:10.5pt; font-variant-numeric:tabular-nums;}
+  .ttbl th,.ttbl td{border:1px solid #d8dcde; padding:5px 7px; height:.4in;}
+  .ttbl th{background:var(--line); color:#fff; font-weight:700; text-align:center; font-size:11pt; border-color:var(--line);}
+  .ttbl tr:nth-child(even) td{background:#f7f9f9;}
+  .c-store,.c-st,.c-rt,.c-rank{text-align:center;}
+  .c-name{text-align:left;}
+  .c-amt{text-align:right; font-weight:600;}
+
+  .mtbl{position:absolute; border-collapse:collapse; font-size:9.5pt; font-variant-numeric:tabular-nums;}
+  .mtbl th,.mtbl td{border:1px solid #d8dcde; padding:3px 5px; text-align:center; height:.34in;}
+  .mtbl th{background:var(--line); color:#fff; font-weight:700;}
+  .mtbl td.cat{text-align:left; font-weight:700;}
+  .mtbl td.cat .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+  .mtbl tr.sum td{background:#eef3f3; font-weight:800;}
+  .mtbl td.tot{font-weight:800; color:var(--line);}
+
+  .placeholder{position:absolute; left:50%; top:55%; transform:translate(-50%,-50%); text-align:center; color:var(--muted);}
+  .placeholder .big{font-size:18pt; font-weight:700; color:#9aa3a8;}
+  .placeholder .sm{font-size:12pt; margin-top:6px;}
+
+  @media print{
+    @page{ size:13.333in 7.5in; margin:0; }
+    html,body{background:#fff;}
+    .controls,.panel{display:none !important;}
+    .stage{padding:0; gap:0;}
+    .holder{height:auto !important; width:auto !important;}
+    .slide{transform:none !important; box-shadow:none; border-radius:0; page-break-after:always; break-after:page;}
+    .slide:last-child{page-break-after:auto;}
+  }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <div class="brand"><b>生鮮異常庫存週報</b></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="spacer"></div>
+  <span id="status" class="status"></span>
+  <label class="btn ghost">上傳原始檔
+    <input id="file" type="file" accept=".xlsx,.xls" hidden>
+  </label>
+  <input id="date" type="date">
+  <span id="filechip" class="filechip"></span>
+  <button class="btn" id="authBtn">Google 登入</button>
+  <button class="btn sec" id="histBtn">歷史</button>
+  <button class="btn" id="pdfBtn">下載 PDF</button>
+</div>
+
+<div class="panel" id="panel">
+  <h2 id="panelTitle"></h2>
+  <table class="htable" id="histTable"></table>
+  <div class="acts">
+    <button class="btn ghost" id="expBtn">匯出 JSON</button>
+    <label class="btn ghost">匯入 JSON<input id="impFile" type="file" accept=".json" hidden></label>
+    <button class="btn ghost" id="cloudBtn" style="border-color:#a8cdd2;">推送歷史到雲端</button>
+    <button class="btn ghost" id="clrBtn" style="color:#BB3E03;border-color:#e0b8a8;">清空此報告歷史</button>
+  </div>
+</div>
+
+<div class="stage" id="stage"></div>
+
+<script>
+const SEEDS={"inactive":[{"date":"2026/2/1","31":5,"32":0,"33":0,"34":11,"35":61,"36":29,"38":0,"39":42},{"date":"2026/2/8","31":8,"32":0,"33":1,"34":5,"35":31,"36":19,"38":0,"39":45},{"date":"2026/2/15","31":9,"32":0,"33":2,"34":0,"35":30,"36":25,"38":0,"39":33},{"date":"2026/2/22","31":9,"32":0,"33":1,"34":0,"35":35,"36":28,"38":0,"39":32},{"date":"2026/3/1","31":12,"32":0,"33":10,"34":0,"35":42,"36":54,"38":0,"39":52},{"date":"2026/3/8","31":13,"32":0,"33":9,"34":0,"35":51,"36":66,"38":0,"39":58},{"date":"2026/3/15","31":13,"32":1,"33":9,"34":6,"35":32,"36":49,"38":0,"39":58},{"date":"2026/3/22","31":15,"32":3,"33":10,"34":0,"35":36,"36":50,"38":0,"39":43},{"date":"2026/3/29","31":23,"32":3,"33":9,"34":1,"35":62,"36":42,"38":0,"39":40},{"date":"2026/4/5","31":46,"32":0,"33":2,"34":2,"35":50,"36":43,"38":0,"39":30},{"date":"2026/4/12","31":58,"32":3,"33":1,"34":3,"35":63,"36":52,"38":0,"39":22},{"date":"2026/4/19","31":75,"32":3,"33":3,"34":13,"35":86,"36":60,"38":0,"39":22},{"date":"2026/4/26","31":81,"32":3,"33":3,"34":17,"35":90,"36":67,"38":0,"39":21},{"date":"2026/5/3","31":57,"32":0,"33":4,"34":17,"35":67,"36":76,"38":0,"39":20},{"date":"2026/5/10","31":49,"32":0,"33":4,"34":13,"35":61,"36":87,"38":0,"39":23},{"date":"2026/5/17","31":0,"32":0,"33":0,"34":17,"35":40,"36":91,"38":0,"39":21},{"date":"2026/5/24","31":36,"32":0,"33":4,"34":15,"35":57,"36":96,"38":0,"39":24}],"lowTurn":[{"date":"2026/2/1","31":121,"32":44,"33":40,"34":280,"35":846,"36":1176,"38":10,"39":180},{"date":"2026/2/8","31":172,"32":275,"33":47,"34":227,"35":521,"36":1203,"38":14,"39":177},{"date":"2026/2/15","31":80,"32":13,"33":36,"34":134,"35":320,"36":708,"38":9,"39":144},{"date":"2026/2/22","31":77,"32":20,"33":34,"34":134,"35":421,"36":485,"38":6,"39":123},{"date":"2026/3/1","31":148,"32":6,"33":40,"34":312,"35":791,"36":558,"38":2,"39":155},{"date":"2026/3/8","31":164,"32":8,"33":18,"34":132,"35":436,"36":347,"38":7,"39":185},{"date":"2026/3/15","31":141,"32":2,"33":20,"34":50,"35":392,"36":374,"38":16,"39":169},{"date":"2026/3/22","31":151,"32":5,"33":29,"34":32,"35":457,"36":335,"38":17,"39":204},{"date":"2026/3/29","31":185,"32":2,"33":7,"34":32,"35":423,"36":342,"38":7,"39":211},{"date":"2026/4/5","31":171,"32":0,"33":5,"34":27,"35":339,"36":221,"38":17,"39":137},{"date":"2026/4/12","31":130,"32":1,"33":5,"34":50,"35":380,"36":185,"38":14,"39":211},{"date":"2026/4/19","31":121,"32":5,"33":21,"34":158,"35":515,"36":177,"38":16,"39":249},{"date":"2026/4/26","31":135,"32":5,"33":23,"34":147,"35":426,"36":224,"38":17,"39":228},{"date":"2026/5/3","31":125,"32":0,"33":75,"34":88,"35":485,"36":185,"38":3,"39":149},{"date":"2026/5/10","31":98,"32":5,"33":69,"34":125,"35":491,"36":197,"38":14,"39":162},{"date":"2026/5/17","31":117,"32":4,"33":41,"34":77,"35":517,"36":179,"38":12,"39":173},{"date":"2026/5/24","31":113,"32":5,"33":62,"34":78,"35":772,"36":203,"38":13,"39":250}],"expiry":[{"date":"2026/2/8","31":10,"32":0,"33":1,"34":35,"35":76,"36":56,"38":0,"39":99},{"date":"2026/2/15","31":18,"32":0,"33":1,"34":41,"35":87,"36":55,"38":0,"39":113},{"date":"2026/2/22","31":19,"32":0,"33":1,"34":40,"35":127,"36":56,"38":0,"39":123},{"date":"2026/3/1","31":19,"32":15,"33":9,"34":31,"35":109,"36":70,"38":3,"39":121},{"date":"2026/3/8","31":18,"32":6,"33":12,"34":37,"35":106,"36":63,"38":2,"39":111},{"date":"2026/3/15","31":18,"32":5,"33":14,"34":37,"35":108,"36":60,"38":1,"39":149},{"date":"2026/3/22","31":17,"32":5,"33":14,"34":39,"35":96,"36":68,"38":1,"39":258},{"date":"2026/3/29","31":11,"32":5,"33":17,"34":40,"35":91,"36":65,"38":3,"39":280},{"date":"2026/3/31","31":11,"32":4,"33":10,"34":41,"35":91,"36":70,"38":4,"39":308},{"date":"2026/4/5","31":14,"32":0,"33":7,"34":35,"35":71,"36":64,"38":1,"39":262},{"date":"2026/4/12","31":11,"32":0,"33":6,"34":36,"35":71,"36":58,"38":1,"39":253},{"date":"2026/4/19","31":23,"32":1,"33":5,"34":37,"35":68,"36":55,"38":1,"39":242},{"date":"2026/4/26","31":22,"32":1,"33":7,"34":38,"35":69,"36":57,"38":0,"39":243},{"date":"2026/5/3","31":20,"32":1,"33":6,"34":31,"35":85,"36":56,"38":0,"39":251},{"date":"2026/5/10","31":94,"32":1,"33":6,"34":32,"35":85,"36":77,"38":0,"39":235},{"date":"2026/5/17","31":92,"32":1,"33":6,"34":33,"35":89,"36":75,"38":0,"39":219},{"date":"2026/5/24","31":79,"32":1,"33":5,"34":32,"35":97,"36":70,"38":0,"39":176}]};
+</script>
+<script>
+/* ====== Firebase 設定（am-fresh 專案）======
+   資料存 Firestore，靠 Google 登入 + 安全規則鎖你的帳號；未登入時用本機 localStorage。 */
+const firebaseConfig = {
+  apiKey: "AIzaSyCBMGBqi_MnxhkRS2DnW-Tv4uE4W8h2ga8",
+  authDomain: "am-fresh.firebaseapp.com",
+  projectId: "am-fresh",
+  storageBucket: "am-fresh.firebasestorage.app",
+  messagingSenderId: "2731202418",
+  appId: "1:2731202418:web:ded3ecda1eb8bdf90b6feb"
+};
+const DISPLAY_WEEKS = 13;   // 趨勢圖只顯示最近 N 週（歷史仍全部留存）
+
+/* ====== 固定配色（三頁籤共用，由下往上堆疊順序）====== */
+const CANON=[
+  [31,"南北貨","#BB3E03",true],
+  [32,"水果","#8ECAE6",false],
+  [33,"蔬菜","#A7C957",false],
+  [34,"麵包","#E9C46A",false],
+  [35,"配菜","#2A9D8F",true],
+  [36,"海鮮","#00606E",true],
+  [38,"有機","#588157",true],
+  [39,"肉品","#EE9B00",true],
+];
+const SECS=CANON.map(c=>c[0]);
+const COLOR={}, WHITE={}, NAME={};
+CANON.forEach(([s,n,c,w])=>{COLOR[s]=c;WHITE[s]=w;NAME[s]=n;});
+
+const STORE={701:"復興",711:"景美",713:"永和",716:"桃園",717:"楊梅",718:"台南",724:"三重",725:"花蓮",726:"基隆",727:"豐原",728:"巨城",729:"南雅",731:"水湳"};
+const STORE_ORDER=[701,711,713,716,717,718,724,725,726,727,728,729,731];
+
+/* ====== 三份報告設定 ====== */
+const REPORTS={
+  inactive:{
+    label:"久不異動", title:"生鮮久不異動庫存情形",
+    agenda:["每週金額趨勢－全公司、分類","本週金額－分店、分類","本週金額 TOP 40"],
+    trendTitle:"一、每週金額趨勢－全公司、分類",
+    storeTitle:"二、本週金額－分店、分類",
+    filterText:["篩選條件","1. 銷售 / 進貨 / 移入 / 移出日 ＞ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","4. 商品狀態 ≠ NS","＊CG 排除（待定義）"],
+    layout:"topTable",
+    filter:(r,c)=> old(r.s,c.wk8)&&old(r.p,c.wk8)&&old(r.mi,c.wk8)&&old(r.mo,c.wk8)&&r.qty>0&&r.st!=="NS"&&!([930,338].includes(r.cat)),
+  },
+  lowTurn:{
+    label:"低迴轉", title:"生鮮低迴轉庫存情形",
+    agenda:["每週金額趨勢－全公司、分類","當週金額－分店、分類","當週商品支數－分店、分類","金額 TOP 20 明細"],
+    trendTitle:"一、每週金額趨勢－全公司、分類",
+    storeTitle:"二、當週金額－分店、分類",
+    filterText:["篩選條件","1. 銷售 / 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ＜ 0.1","6. 有國際條碼"],
+    layout:"countTop20",
+    filter:(r,c)=> (recent(r.s,c.wk8)||recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<0.1&&hasBarcode(r.bc),
+  },
+  expiry:{
+    label:"屆期風險", title:"有屆期風險生鮮庫存",
+    agenda:["進貨（移入）逾 180 天商品金額－全公司","進貨（移入）逾 180 天商品金額－分店、分類","明細 TOP 40"],
+    trendTitle:"一、進貨（移入）逾 180 天商品金額－全公司",
+    storeTitle:"二、進貨（移入）逾 180 天商品金額－分店、分類",
+    filterText:["篩選條件","1. 進貨 / 移入日 ＞ 180 天","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","＊CG 排除（待定義）"],
+    layout:"topTable",
+    filter:(r,c)=> old(r.p,c.d180)&&old(r.mi,c.d180)&&r.qty>0&&!([930,338].includes(r.cat)),
+  },
+};
+const ORDER=["inactive","lowTurn","expiry"];
+let ACTIVE="inactive";
+let CURRENT={};  // {report: aggregates}
+
+/* 日期工具：YYYYMMDD int */
+function old(dateInt, cutInt){ return (!dateInt) || dateInt < cutInt; }     // 距今 > 門檻（含 0/空）
+function recent(dateInt, cutInt){ return dateInt && dateInt >= cutInt; }    // 距今 < 門檻
+function hasBarcode(bc){ const s=String(bc||"").trim(); return s.length>0 && s!=="0" && !s.startsWith("200"); } // 排除店內碼(200開頭)
+function ymd(d){ return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
+function minusDays(reportInt, days){
+  const y=Math.floor(reportInt/10000), m=Math.floor(reportInt/100)%100, dd=reportInt%100;
+  const d=new Date(y,m-1,dd); d.setDate(d.getDate()-days); return ymd(d);
+}
+
+/* ====== 歷史 localStorage（每報告各一份）====== */
+const HKEY="fresh_inv_v3";
+function loadAll(){ try{const r=localStorage.getItem(HKEY); if(r) return JSON.parse(r);}catch(e){} const init=JSON.parse(JSON.stringify(SEEDS)); saveAll(init); return init; }
+function saveAll(h){ try{localStorage.setItem(HKEY,JSON.stringify(h));}catch(e){} }
+function sortH(h){ return h.slice().sort((a,b)=> new Date(a.date.replace(/\//g,'-')) - new Date(b.date.replace(/\//g,'-'))); }
+function upsert(report,date,byCat){
+  const all=loadAll(); let h=(all[report]||[]).filter(r=>r.date!==date);
+  const row={date}; SECS.forEach(s=>row[s]=byCat[s]||0); h.push(row);
+  all[report]=sortH(h); saveAll(all); return all[report];
+}
+
+/* ====== Firebase 雲端同步（Google 登入 + Firestore；未登入時用本機）====== */
+function setStatus(t){ const el=document.getElementById("status"); if(el) el.textContent=t; }
+function ndClient(d){ const t=new Date(d); return isNaN(+t)?String(d):(t.getFullYear()+"/"+(t.getMonth()+1)+"/"+t.getDate()); }
+
+let DB=null, AUTH=null, USER=null;
+function fbInit(){
+  if(!window.firebase || !firebaseConfig.apiKey){ render(); return; }
+  try{
+    firebase.initializeApp(firebaseConfig);
+    AUTH=firebase.auth(); DB=firebase.firestore();
+    AUTH.onAuthStateChanged(u=>{ USER=u||null; updateAuthUI(); if(USER) loadFromCloud(); else render(); });
+  }catch(e){ render(); }
+}
+function signIn(){ if(!AUTH) return; AUTH.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(()=>setStatus("登入失敗")); }
+function signOut(){ if(AUTH) AUTH.signOut(); }
+function updateAuthUI(){
+  const b=document.getElementById("authBtn"); if(!b) return;
+  if(USER){ b.textContent="登出"; b.classList.add("ghost"); setStatus((USER.email||"已登入")); }
+  else{ b.textContent="Google 登入"; b.classList.remove("ghost"); setStatus("未登入（本機模式）"); }
+}
+function docRef(report){ return DB.collection("users").doc(USER.uid).collection("freshInventory").doc(report); }
+async function loadFromCloud(){
+  if(!USER||!DB) return;
+  try{
+    setStatus("讀取雲端…");
+    const all=loadAll();
+    for(const r of ORDER){
+      const snap=await docRef(r).get();
+      if(snap.exists && Array.isArray((snap.data()||{}).weeks)){
+        const byDate={}; (all[r]||[]).forEach(x=>byDate[x.date]=x);     // 以日期合併，雲端優先
+        snap.data().weeks.forEach(x=>{ const d=ndClient(x.date); const row={date:d}; SECS.forEach(s=>row[s]=Number(x[s])||0); byDate[d]=row; });
+        all[r]=sortH(Object.values(byDate));
+      }
+    }
+    saveAll(all); render(); if(document.getElementById("panel").classList.contains("open")) renderHist();
+    setStatus(USER.email||"已同步");
+  }catch(e){ setStatus("雲端讀取失敗，用本機資料"); render(); }
+}
+async function pushReport(r){
+  if(!USER||!DB) return;
+  const all=loadAll();
+  const weeks=(all[r]||[]).map(x=>{ const o={date:x.date}; SECS.forEach(s=>o[s]=x[s]||0); return o; });
+  await docRef(r).set({weeks});
+}
+async function pushAll(){          // 上傳當週後 / 手動推送：把三報告完整歷史寫回雲端
+  if(!USER){ return; }
+  for(const r of ORDER){ try{ await pushReport(r); }catch(e){} }
+}
+async function bootstrapToCloud(){ // 手動：把本機歷史推上雲端
+  if(!USER){ alert("請先用右上「Google 登入」登入"); return; }
+  setStatus("上傳到雲端…");
+  await pushAll();
+  setStatus("已上傳到雲端"); alert("已把目前歷史上傳到 Firestore");
+}
+async function pushWeek(){ await pushAll(); }   // 上傳當週後呼叫
+
+/* ====== 解析 + 三報告同時彙整 ====== */
+function norm(s){return String(s==null?"":s).replace(/\s+/g,"").trim();}
+function blank(report){
+  const sc={},cnt={},tot={}; STORE_ORDER.forEach(st=>{sc[st]={};cnt[st]={};tot[st]=0;SECS.forEach(s=>{sc[st][s]=0;cnt[st][s]=0;});});
+  return {byCat:Object.fromEntries(SECS.map(s=>[s,0])), storeCat:sc, storeCount:cnt, storeTot:tot, rows:[]};
+}
+function processMaster(rows, dateStr){
+  const head=rows[0].map(norm);
+  const I=k=>head.indexOf(k);
+  const ix={店:I("店號"),sec:I("SEC"),cat:I("CAT"),nm:I("品名"),st:I("商品狀態"),rt:I("可否退貨"),
+    dms:I("DMS"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),
+    s:I("最後一次銷售日"),p:I("最後一次進貨驗收日"),mi:I("最後一次移入日期"),mo:I("最後一次移出日期")};
+  const reportInt=(()=>{const p=dateStr.split("/");return (+p[0])*10000+(+p[1])*100+(+p[2]);})();
+  const ctx={wk8:minusDays(reportInt,56), d180:minusDays(reportInt,180)};
+  const acc={}; ORDER.forEach(k=>acc[k]=blank(k));
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i]; if(!row||row.length===0) continue;
+    const store=parseInt(row[ix.店],10); if(isNaN(store)) continue;
+    const rec={store, sec:parseInt(String(row[ix.sec]),10), cat:parseInt(String(row[ix.cat]),10),
+      nm:String(row[ix.nm]||"").trim(), st:String(row[ix.st]||"").trim(), rt:String(row[ix.rt]||"").trim(),
+      dms:parseFloat(row[ix.dms])||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc],
+      s:parseInt(row[ix.s],10)||0, p:parseInt(row[ix.p],10)||0, mi:parseInt(row[ix.mi],10)||0, mo:parseInt(row[ix.mo],10)||0};
+    for(const key of ORDER){
+      if(!REPORTS[key].filter(rec,ctx)) continue;
+      const a=acc[key];
+      if(SECS.includes(rec.sec)){
+        a.byCat[rec.sec]+=rec.amt;
+        if(a.storeCat[store]){ a.storeCat[store][rec.sec]+=rec.amt; a.storeCount[store][rec.sec]+=1; }
+      }
+      if(a.storeTot[store]!=null) a.storeTot[store]+=rec.amt;
+      a.rows.push(rec);
+    }
+  }
+  const out={};
+  for(const key of ORDER){
+    const a=acc[key]; const k=v=>Math.round(v/1000);
+    const byCatK=Object.fromEntries(SECS.map(s=>[s,k(a.byCat[s])]));
+    const storeCatK={}; STORE_ORDER.forEach(st=>{storeCatK[st]=Object.fromEntries(SECS.map(s=>[s,k(a.storeCat[st][s])]));});
+    const storeTot=Object.fromEntries(STORE_ORDER.map(st=>[st,k(a.storeTot[st])]));
+    const top=a.rows.slice().sort((x,y)=>y.amt-x.amt);
+    out[key]={date:dateStr, n:a.rows.length, byCatK, storeCatK, storeCount:a.storeCount, storeTot,
+      top40:top.slice(0,40).map(d=>({店:d.store,品名:d.nm,狀態:d.st,退貨:d.rt,金額:Math.round(d.amt)})),
+      top20:top.slice(0,20).map((d,i)=>({rank:i+1,品名:d.nm,金額:Math.round(d.amt)}))};
+    upsert(key,dateStr,byCatK);
+  }
+  return out;
+}
+
+/* ====== DOM helpers ====== */
+function el(t,c,x){const e=document.createElement(t); if(c)e.className=c; if(x!=null)e.textContent=x; return e;}
+function abs(e,s){Object.assign(e.style,s); return e;}
+function header(slide,title,page){
+  slide.appendChild(el("div","ttl",title));
+  slide.appendChild(el("div","rule"));
+  slide.appendChild(el("div","foot","Proprietary and Confidential"));
+  if(page!=null) slide.appendChild(el("div","pg",String(page)));
+}
+function legend(slide,left,top,width){
+  const lg=abs(el("div","legend"),{left,top,width:width||"9in"});
+  CANON.forEach(([sec,name,col])=>{
+    const it=el("div","it"); const sw=el("span","sw"); sw.style.background=col; it.appendChild(sw);
+    it.appendChild(el("span",null,String(sec).padStart(3,"0")+" "+name)); lg.appendChild(it);
+  });
+  slide.appendChild(lg);
+}
+function filterBox(slide,lines,left,top){
+  const fb=abs(el("div","fbox"),{left,top,width:"3.5in"});
+  lines.forEach((line,i)=>{ const p=el("div"); if(i===0)p.innerHTML="<b>"+line+"</b>";
+    else if(line.startsWith("＊"))p.innerHTML="<span class='note'>"+line+"</span>"; else p.textContent=line; fb.appendChild(p);});
+  slide.appendChild(fb);
+}
+function stackedChart(slide,{cats,data,x,y,w,h,totals}){
+  const n=cats.length, cols=`66px repeat(${n},1fr)`;
+  let maxTot=1; for(let i=0;i<n;i++){let t=0;SECS.forEach(s=>t+=(data[s]?data[s][i]:0));if(t>maxTot)maxTot=t;}
+  const chart=abs(el("div","chart"),{left:x,top:parseFloat(y)+"in",width:w,height:h+"in",gridTemplateColumns:cols});
+  chart.appendChild(el("div"));
+  for(let i=0;i<n;i++){
+    const total=SECS.reduce((a,s)=>a+(data[s]?data[s][i]:0),0);
+    const cell=el("div","barwrap"); const bar=el("div","bar"); bar.style.height=(total/maxTot*100)+"%";
+    CANON.forEach(([sec])=>{ const v=data[sec]?data[sec][i]:0; if(v<=0)return;
+      const seg=el("div","seg"); seg.style.background=COLOR[sec]; seg.style.height=(v/total*100)+"%";
+      seg.style.color=WHITE[sec]?"#fff":"#2c3236"; if(v/maxTot*h*72>12) seg.textContent=v; bar.appendChild(seg);});
+    cell.appendChild(bar); chart.appendChild(cell);
+  }
+  slide.appendChild(chart);
+  const xr=abs(el("div","xrow"),{left:x,top:(parseFloat(y)+h+0.06)+"in",width:w,gridTemplateColumns:cols});
+  xr.appendChild(el("div")); cats.forEach(c=>xr.appendChild(el("div",null,c))); slide.appendChild(xr);
+  const tr=abs(el("div","trow"),{left:x,top:(parseFloat(y)+h+0.42)+"in",width:w,gridTemplateColumns:cols});
+  tr.style.fontSize = n>15 ? "9pt" : "11pt";
+  tr.appendChild(el("div","lbl","總金額")); totals.forEach(v=>tr.appendChild(el("div","cell",v.toLocaleString()))); slide.appendChild(tr);
+}
+
+/* ====== Slides ====== */
+function coverSlide(rep,date){
+  const s=el("div","slide cover"); s.appendChild(el("div","band"));
+  s.appendChild(el("div","ct",rep.title)); s.appendChild(el("div","cd",date));
+  const ag=el("div","ag"); rep.agenda.forEach((a,i)=>{const p=el("div"); p.innerHTML="<span class='dot'>"+("一二三四五六".charAt(i))+"、</span> "+a; ag.appendChild(p);});
+  s.appendChild(ag); return s;
+}
+function trendSlide(rep,hist){
+  const s=el("div","slide"); header(s,rep.trendTitle,1);
+  s.appendChild(abs(el("div","unit","單位：千元"),{left:".6in",top:"1.42in"}));
+  filterBox(s,rep.filterText,"9.55in","1.5in"); legend(s,".6in","1.85in","8.8in");
+  const view=hist.slice(-DISPLAY_WEEKS);   // 只顯示最近 N 週（歷史仍全部保留）
+  const cats=view.map(r=>{const p=r.date.split("/");return p[1]+"/"+p[2];});
+  const data={}; SECS.forEach(sec=>data[sec]=view.map(r=>r[sec]||0));
+  const totals=view.map(r=>SECS.reduce((a,s)=>a+(r[s]||0),0));
+  stackedChart(s,{cats,data,x:".6in",y:"2.45",w:"8.8in",h:3.35,totals}); return s;
+}
+function storeSlide(rep,cur){
+  const s=el("div","slide"); header(s,rep.storeTitle,2);
+  s.appendChild(abs(el("div","unit","單位：千元"),{left:".6in",top:"1.38in"}));
+  filterBox(s,rep.filterText,".6in","1.72in"); legend(s,"3.05in","1.5in","9.7in");
+  if(!cur){ s.appendChild(placeholder()); return s; }
+  const cats=STORE_ORDER.map(st=>STORE[st]);
+  const data={}; SECS.forEach(sec=>data[sec]=STORE_ORDER.map(st=>cur.storeCatK[st][sec]));
+  const totals=STORE_ORDER.map(st=>cur.storeTot[st]);
+  stackedChart(s,{cats,data,x:"3.05in",y:"2.0",w:"9.85in",h:3.55,totals}); return s;
+}
+function placeholder(){
+  const p=el("div","placeholder"); p.appendChild(el("div","big","尚未上傳原始檔"));
+  p.appendChild(el("div","sm","點右上「上傳原始檔」載入當週 Group03，三份報告會一起生成")); return p;
+}
+function topTableBlock(rows,left){
+  const t=abs(el("table","ttbl"),{left,top:"1.8in"});
+  const heads=["店號","品名","狀態","退貨","金額"], cls=["c-store","c-name","c-st","c-rt","c-amt"], w=[".6in","3.1in",".6in",".6in","1.0in"];
+  const cg=el("colgroup"); w.forEach(x=>{const c=document.createElement("col");c.style.width=x;cg.appendChild(c);}); t.appendChild(cg);
+  const hr=el("tr"); heads.forEach(h=>hr.appendChild(el("th",null,h))); t.appendChild(hr);
+  rows.forEach(r=>{ const tr=el("tr"); const v=[r.店,r.品名,r.狀態,r.退貨,r.金額.toLocaleString()];
+    v.forEach((x,i)=>tr.appendChild(el("td",cls[i],String(x)))); t.appendChild(tr);});
+  return t;
+}
+function topSlide(rep,cur,which,page){
+  const s=el("div","slide"); header(s, which==="hi"?"三、本週金額 TOP 1～20":"三、本週金額 TOP 21～40", page);
+  s.appendChild(abs(el("div","unit","單位：元"),{left:".6in",top:"1.4in"}));
+  if(!cur){ s.appendChild(placeholder()); return s; }
+  const t=cur.top40;
+  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in"));
+  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in"));
+  return s;
+}
+/* 低迴轉：支數矩陣表 */
+function countSlide(rep,cur,page){
+  const s=el("div","slide"); header(s,"三、當週商品支數－分店、分類",page);
+  s.appendChild(abs(el("div","unit","單位：支"),{left:".6in",top:"1.4in"}));
+  if(!cur){ s.appendChild(placeholder()); return s; }
+  const t=abs(el("table","mtbl"),{left:".6in",top:"1.85in",width:"12.13in"});
+  const cg=el("colgroup"); const widths=["1.05in"].concat(STORE_ORDER.map(()=>"0.74in")).concat(["0.85in"]);
+  widths.forEach(x=>{const c=document.createElement("col");c.style.width=x;cg.appendChild(c);}); t.appendChild(cg);
+  const hr=el("tr"); hr.appendChild(el("th",null,"分類")); STORE_ORDER.forEach(st=>hr.appendChild(el("th",null,STORE[st]))); hr.appendChild(el("th",null,"合計")); t.appendChild(hr);
+  const colTot=Object.fromEntries(STORE_ORDER.map(st=>[st,0])); let grand=0;
+  CANON.forEach(([sec,name,col])=>{
+    let rowTot=0; const tr=el("tr");
+    const c0=el("td","cat"); c0.innerHTML="<span class='sw' style='background:"+col+"'></span>"+String(sec).padStart(3,"0")+" "+name; tr.appendChild(c0);
+    STORE_ORDER.forEach(st=>{ const v=cur.storeCount[st][sec]||0; rowTot+=v; colTot[st]+=v; tr.appendChild(el("td",null,v||"")); });
+    tr.appendChild(el("td","tot",rowTot||"")); grand+=rowTot; t.appendChild(tr);
+  });
+  const sr=el("tr","sum"); sr.appendChild(el("td","cat","合計"));
+  STORE_ORDER.forEach(st=>sr.appendChild(el("td",null,colTot[st]||""))); sr.appendChild(el("td","tot",grand||"")); t.appendChild(sr);
+  s.appendChild(t); return s;
+}
+/* 低迴轉：金額 TOP 20 排名表 */
+function rankSlide(rep,cur,page){
+  const s=el("div","slide"); header(s,"四、金額 TOP 20 明細",page);
+  s.appendChild(abs(el("div","unit","單位：元"),{left:".6in",top:"1.4in"}));
+  if(!cur){ s.appendChild(placeholder()); return s; }
+  function block(rows,left){
+    const t=abs(el("table","ttbl"),{left,top:"1.8in"});
+    const cg=el("colgroup"); [".7in","3.6in","1.2in"].forEach(x=>{const c=document.createElement("col");c.style.width=x;cg.appendChild(c);}); t.appendChild(cg);
+    const hr=el("tr"); ["排名","品名","庫存金額"].forEach(h=>hr.appendChild(el("th",null,h))); t.appendChild(hr);
+    rows.forEach(r=>{ const tr=el("tr"); tr.appendChild(el("td","c-rank",String(r.rank)));
+      tr.appendChild(el("td","c-name",r.品名)); tr.appendChild(el("td","c-amt",r.金額.toLocaleString())); t.appendChild(tr);});
+    return t;
+  }
+  s.appendChild(block(cur.top20.slice(0,10),".6in"));
+  s.appendChild(block(cur.top20.slice(10,20),"6.8in"));
+  return s;
+}
+
+/* ====== 渲染 ====== */
+function render(){
+  const rep=REPORTS[ACTIVE]; const all=loadAll(); const hist=sortH(all[ACTIVE]||[]);
+  const cur=CURRENT[ACTIVE]||null; const date=cur?cur.date:(hist.length?hist[hist.length-1].date:"—");
+  const stage=document.getElementById("stage"); stage.innerHTML="";
+  let slides=[coverSlide(rep,date), trendSlide(rep,hist), storeSlide(rep,cur)];
+  if(rep.layout==="topTable"){ slides.push(topSlide(rep,cur,"hi",3)); slides.push(topSlide(rep,cur,"lo",4)); }
+  else { slides.push(countSlide(rep,cur,3)); slides.push(rankSlide(rep,cur,4)); }
+  slides.forEach(sl=>{const h=el("div","holder"); h.appendChild(sl); stage.appendChild(h);});
+  fitSlides();
+  document.getElementById("status").textContent = cur ? (rep.label+"：本週 "+cur.n.toLocaleString()+" 筆") : "";
+}
+function fitSlides(){
+  const avail=Math.min(document.body.clientWidth-40, 13.333*96), scale=avail/(13.333*96);
+  document.querySelectorAll(".holder").forEach(h=>{const sl=h.querySelector(".slide");
+    sl.style.transform="scale("+scale+")"; h.style.width=(13.333*96*scale)+"px"; h.style.height=(7.5*96*scale)+"px";});
+}
+window.addEventListener("resize",fitSlides);
+
+/* ====== Tabs ====== */
+function buildTabs(){
+  const tb=document.getElementById("tabs"); tb.innerHTML="";
+  ORDER.forEach(k=>{ const b=el("button","tab"+(k===ACTIVE?" active":""),REPORTS[k].label);
+    b.onclick=()=>{ACTIVE=k; buildTabs(); render(); if(document.getElementById("panel").classList.contains("open"))renderHist();}; tb.appendChild(b);});
+}
+
+/* ====== 歷史面板 ====== */
+function renderHist(){
+  const all=loadAll(); const h=sortH(all[ACTIVE]||[]);
+  document.getElementById("panelTitle").textContent="【"+REPORTS[ACTIVE].label+"】歷史資料（單位：千元）— 每次上傳自動累積；可刪除或匯出備份";
+  let html="<tr><th>週次</th>"+CANON.map(c=>"<th>"+String(c[0]).padStart(3,"0")+" "+c[1]+"</th>").join("")+"<th>合計</th><th>刪</th></tr>";
+  h.forEach(r=>{ const tot=SECS.reduce((a,s)=>a+(r[s]||0),0);
+    html+="<tr><td>"+r.date+"</td>"+SECS.map(s=>"<td>"+(r[s]||0)+"</td>").join("")+"<td><b>"+tot+"</b></td><td class='del' data-d='"+r.date+"'>✕</td></tr>";});
+  const t=document.getElementById("histTable"); t.innerHTML=html;
+  t.querySelectorAll(".del").forEach(d=>d.onclick=()=>{ if(confirm("刪除 "+REPORTS[ACTIVE].label+" 的 "+d.dataset.d+"？")){
+    const all=loadAll(); all[ACTIVE]=(all[ACTIVE]||[]).filter(r=>r.date!==d.dataset.d); saveAll(all); renderHist(); render();}});
+}
+
+/* ====== 事件 ====== */
+document.getElementById("file").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  document.getElementById("filechip").textContent=f.name;
+  document.getElementById("status").textContent="解析中…";
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+      const di=document.getElementById("date").value;
+      let date; if(di){const p=di.split("-");date=(+p[0])+"/"+(+p[1])+"/"+(+p[2]);}
+      else{const d=new Date();date=d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();}
+      CURRENT=processMaster(rows,date);
+      buildTabs(); render(); if(document.getElementById("panel").classList.contains("open"))renderHist();
+      pushWeek();   // 已登入則把當週資料寫回 Firestore（未登入則跳過）
+    }catch(err){ document.getElementById("status").textContent="解析失敗"; alert("解析失敗："+err.message); }
+  };
+  reader.readAsArrayBuffer(f);
+});
+document.getElementById("histBtn").onclick=()=>{const p=document.getElementById("panel");p.classList.toggle("open");if(p.classList.contains("open"))renderHist();};
+document.getElementById("pdfBtn").onclick=()=>window.print();
+document.getElementById("expBtn").onclick=()=>{const all=loadAll();const blob=new Blob([JSON.stringify(all[ACTIVE]||[],null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=ACTIVE+"_history.json";a.click();};
+document.getElementById("impFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=ev=>{try{const j=JSON.parse(ev.target.result);if(Array.isArray(j)){const all=loadAll();all[ACTIVE]=sortH(j);saveAll(all);renderHist();render();alert("已匯入 "+j.length+" 週至「"+REPORTS[ACTIVE].label+"」");}}catch(err){alert("格式錯誤");}};r.readAsText(f);});
+document.getElementById("clrBtn").onclick=()=>{if(confirm("清空「"+REPORTS[ACTIVE].label+"」全部歷史？")){const all=loadAll();all[ACTIVE]=[];saveAll(all);renderHist();render();}};
+document.getElementById("cloudBtn").onclick=()=>bootstrapToCloud();
+document.getElementById("authBtn").onclick=()=>{ USER?signOut():signIn(); };
+
+document.getElementById("date").value="2026-05-31";
+buildTabs(); render(); fbInit();
+</script>
+</body>
+</html>
