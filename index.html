@@ -45,6 +45,20 @@
   .filechip{font-size:11.5px; color:var(--muted); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .status{font-size:11.5px; color:var(--line2); font-weight:700;}
 
+  .iconbtn{width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:17px; line-height:1;}
+  .menuwrap{position:relative;}
+  .menu{position:absolute; top:48px; right:0; width:312px; background:#fff; border:1px solid #e2ded1; border-radius:16px;
+    box-shadow:0 16px 48px rgba(0,40,50,.18); padding:8px; display:none; z-index:70;}
+  .menu.open{display:block;}
+  .menu .mlabel{color:var(--muted); font-size:10.5px; font-weight:800; letter-spacing:.8px; padding:9px 11px 3px;}
+  .menu .mrow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 11px;}
+  .menu .msep{height:1px; background:#efece3; margin:5px 6px;}
+  .menu .minfo{font-size:11px; color:var(--muted); padding:0 11px 8px; word-break:break-all; line-height:1.4;}
+  .menu .sm{padding:7px 12px; font-size:12px;}
+  .menu .mbtn{display:block; width:calc(100% - 12px); margin:2px 6px; text-align:center;}
+  .menu input[type=date]{padding:6px 9px; font-size:12px;}
+  .menu .acct{font-size:12px; color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;}
+
   .panel{background:#fff; border-bottom:1px solid #e6e2d8; padding:0 22px; max-height:0; overflow:hidden; transition:max-height .25s, padding .25s;}
   .panel.open{max-height:430px; padding:16px 22px; overflow:auto;}
   .panel h2{font-size:12.5px; margin-bottom:10px; color:var(--line);}
@@ -132,15 +146,26 @@
   <label class="btn ghost">上傳原始檔
     <input id="file" type="file" accept=".xlsx,.xls" hidden>
   </label>
-  <input id="date" type="date">
-  <span id="filechip" class="filechip"></span>
-  <label class="btn ghost">CG 名單
-    <input id="cgFile" type="file" accept=".xlsx,.xls" hidden>
-  </label>
-  <span id="cgchip" class="filechip"></span>
-  <button class="btn" id="authBtn">Google 登入</button>
-  <button class="btn sec" id="histBtn">歷史</button>
   <button class="btn" id="pdfBtn">下載 PDF</button>
+  <div class="menuwrap">
+    <button class="btn sec iconbtn" id="gearBtn" title="設定" aria-label="設定">⚙</button>
+    <div class="menu" id="menu">
+      <div class="mlabel">帳號</div>
+      <div class="mrow"><span class="acct" id="acctLabel">未登入</span><button class="btn ghost sm" id="authBtn">Google 登入</button></div>
+      <div class="msep"></div>
+      <div class="mlabel">報表日期（上傳時自動由檔名讀取）</div>
+      <div class="mrow"><span style="font-size:12px;color:var(--muted)">手動指定</span><input id="date" type="date"></div>
+      <div class="msep"></div>
+      <div class="mlabel">CG 廠商名單（每月更新）</div>
+      <div class="mrow"><label class="btn ghost sm">上傳 CG 名單<input id="cgFile" type="file" accept=".xlsx,.xls" hidden></label></div>
+      <div class="minfo" id="cgchip">尚未載入 CG 名單</div>
+      <div class="msep"></div>
+      <button class="btn ghost sm mbtn" id="histBtn">歷史資料</button>
+      <div class="msep"></div>
+      <div class="mlabel">目前載入</div>
+      <div class="minfo" id="filechip">尚未上傳原始檔</div>
+    </div>
+  </div>
 </div>
 
 <div class="panel" id="panel">
@@ -282,9 +307,9 @@ function fbInit(){
 function signIn(){ if(!AUTH) return; AUTH.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(()=>setStatus("登入失敗")); }
 function signOut(){ if(AUTH) AUTH.signOut(); }
 function updateAuthUI(){
-  const b=document.getElementById("authBtn"); if(!b) return;
-  if(USER){ b.textContent="登出"; b.classList.add("ghost"); setStatus((USER.email||"已登入")); }
-  else{ b.textContent="Google 登入"; b.classList.remove("ghost"); setStatus("未登入（本機模式）"); }
+  const b=document.getElementById("authBtn"); const al=document.getElementById("acctLabel"); if(!b) return;
+  if(USER){ b.textContent="登出"; if(al) al.textContent=USER.email||"已登入"; setStatus("已登入"); }
+  else{ b.textContent="Google 登入"; if(al) al.textContent="未登入"; setStatus("未登入（本機模式）"); }
 }
 function docRef(report){ return DB.collection("users").doc(USER.uid).collection("freshInventory").doc(report); }
 async function loadFromCloud(){
@@ -550,6 +575,8 @@ function renderHist(){
 document.getElementById("file").addEventListener("change",e=>{
   const f=e.target.files[0]; if(!f) return;
   document.getElementById("filechip").textContent=f.name;
+  const fm=f.name.match(/(20\d{2})(\d{2})(\d{2})/);          // 由檔名自動帶出報表日期
+  if(fm){ document.getElementById("date").value=fm[1]+"-"+fm[2]+"-"+fm[3]; }
   document.getElementById("status").textContent="解析中…";
   const reader=new FileReader();
   reader.onload=ev=>{
@@ -593,6 +620,9 @@ document.getElementById("impFile").addEventListener("change",e=>{const f=e.targe
 document.getElementById("clrBtn").onclick=()=>{if(confirm("清空「"+REPORTS[ACTIVE].label+"」全部歷史？")){const all=loadAll();all[ACTIVE]=[];saveAll(all);renderHist();render();}};
 document.getElementById("cloudBtn").onclick=()=>bootstrapToCloud();
 document.getElementById("authBtn").onclick=()=>{ USER?signOut():signIn(); };
+document.getElementById("histBtn").onclick=()=>{ document.getElementById("menu").classList.remove("open"); const p=document.getElementById("panel"); p.classList.toggle("open"); if(p.classList.contains("open")) renderHist(); };
+document.getElementById("gearBtn").onclick=(e)=>{ e.stopPropagation(); document.getElementById("menu").classList.toggle("open"); };
+document.addEventListener("click",(e)=>{ const w=document.querySelector(".menuwrap"); if(w && !w.contains(e.target)) document.getElementById("menu").classList.remove("open"); });
 
 document.getElementById("date").value="2026-05-31";
 loadCurrentLocal(); cgLoadLocal(); updateCgChip(); buildTabs(); render(); fbInit();
