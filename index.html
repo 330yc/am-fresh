@@ -134,6 +134,10 @@
   </label>
   <input id="date" type="date">
   <span id="filechip" class="filechip"></span>
+  <label class="btn ghost">CG 名單
+    <input id="cgFile" type="file" accept=".xlsx,.xls" hidden>
+  </label>
+  <span id="cgchip" class="filechip"></span>
   <button class="btn" id="authBtn">Google 登入</button>
   <button class="btn sec" id="histBtn">歷史</button>
   <button class="btn" id="pdfBtn">下載 PDF</button>
@@ -193,7 +197,7 @@ const REPORTS={
     agenda:["每週金額趨勢－全公司、分類","本週金額－分店、分類","本週金額 TOP 40"],
     trendTitle:"一、每週金額趨勢－全公司、分類",
     storeTitle:"二、本週金額－分店、分類",
-    filterText:["篩選條件","1. 銷售 / 進貨 / 移入 / 移出日 ＞ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","4. 商品狀態 ≠ NS","＊CG 排除（待定義）"],
+    filterText:["篩選條件","1. 銷售 / 進貨 / 移入 / 移出日 ＞ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","4. 商品狀態 ≠ NS","＊排除 CG 廠商名單"],
     layout:"topTable",
     filter:(r,c)=> old(r.s,c.wk8)&&old(r.p,c.wk8)&&old(r.mi,c.wk8)&&old(r.mo,c.wk8)&&r.qty>0&&r.st!=="NS"&&!([930,338].includes(r.cat)),
   },
@@ -202,7 +206,7 @@ const REPORTS={
     agenda:["每週金額趨勢－全公司、分類","當週金額－分店、分類","當週商品支數－分店、分類","金額 TOP 20 明細"],
     trendTitle:"一、每週金額趨勢－全公司、分類",
     storeTitle:"二、當週金額－分店、分類",
-    filterText:["篩選條件","1. 銷售 / 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ＜ 0.1","6. 有國際條碼"],
+    filterText:["篩選條件","1. 銷售 / 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ＜ 0.1","6. 有國際條碼","＊排除 CG 廠商名單"],
     layout:"countTop20",
     filter:(r,c)=> (recent(r.s,c.wk8)||recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<0.1&&hasBarcode(r.bc),
   },
@@ -211,7 +215,7 @@ const REPORTS={
     agenda:["進貨（移入）逾 180 天商品金額－全公司","進貨（移入）逾 180 天商品金額－分店、分類","明細 TOP 40"],
     trendTitle:"一、進貨（移入）逾 180 天商品金額－全公司",
     storeTitle:"二、進貨（移入）逾 180 天商品金額－分店、分類",
-    filterText:["篩選條件","1. 進貨 / 移入日 ＞ 180 天","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","＊CG 排除（待定義）"],
+    filterText:["篩選條件","1. 進貨 / 移入日 ＞ 180 天","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","＊排除 CG 廠商名單"],
     layout:"topTable",
     filter:(r,c)=> old(r.p,c.d180)&&old(r.mi,c.d180)&&r.qty>0&&!([930,338].includes(r.cat)),
   },
@@ -237,6 +241,24 @@ function loadAll(){ try{const r=localStorage.getItem(HKEY); if(r) return JSON.pa
 function saveAll(h){ try{localStorage.setItem(HKEY,JSON.stringify(h));}catch(e){} }
 function saveCurrentLocal(){ try{ localStorage.setItem(CKEY,JSON.stringify(CURRENT)); }catch(e){} }
 function loadCurrentLocal(){ try{ const r=localStorage.getItem(CKEY); if(r){ const c=JSON.parse(r); ORDER.forEach(k=>{ if(c[k]) CURRENT[k]=c[k]; }); } }catch(e){} }
+
+/* ====== CG 廠商名單（排除用；本機 + Firestore）====== */
+const CGKEY="fresh_inv_cg_v1";
+let CG_SET=new Set();
+let CG_UPDATED="";
+function cgSaveLocal(){ try{ localStorage.setItem(CGKEY,JSON.stringify({codes:[...CG_SET],updated:CG_UPDATED})); }catch(e){} }
+function cgLoadLocal(){ try{ const r=localStorage.getItem(CGKEY); if(r){ const o=JSON.parse(r); CG_SET=new Set((o.codes||[]).map(Number)); CG_UPDATED=o.updated||""; } }catch(e){} }
+function parseCG(rows){ const set=new Set(); rows.forEach(r=>{ const v=parseInt(r[0],10); if(!isNaN(v)) set.add(v); }); return set; }
+function updateCgChip(){ const el=document.getElementById("cgchip"); if(el) el.textContent = CG_SET.size ? ("CG 名單 "+CG_SET.size+" 家"+(CG_UPDATED?(" · "+CG_UPDATED):"")) : "尚未載入 CG 名單"; }
+async function cgPushCloud(){
+  if(!USER||!DB) return;
+  try{ await DB.collection("users").doc(USER.uid).collection("freshInventory").doc("_cg").set({codes:[...CG_SET],count:CG_SET.size,updated:CG_UPDATED}); }catch(e){}
+}
+async function cgLoadCloud(){
+  if(!USER||!DB) return;
+  try{ const snap=await DB.collection("users").doc(USER.uid).collection("freshInventory").doc("_cg").get();
+    if(snap.exists){ const d=snap.data()||{}; if(Array.isArray(d.codes)){ CG_SET=new Set(d.codes.map(Number)); CG_UPDATED=d.updated||""; cgSaveLocal(); updateCgChip(); } } }catch(e){}
+}
 function sortH(h){ return h.slice().sort((a,b)=> new Date(a.date.replace(/\//g,'-')) - new Date(b.date.replace(/\//g,'-'))); }
 function upsert(report,date,byCat){
   const all=loadAll(); let h=(all[report]||[]).filter(r=>r.date!==date);
@@ -269,6 +291,7 @@ async function loadFromCloud(){
   if(!USER||!DB) return;
   try{
     setStatus("讀取雲端…");
+    await cgLoadCloud();
     const all=loadAll();
     for(const r of ORDER){
       const snap=await docRef(r).get();
@@ -315,7 +338,7 @@ function processMaster(rows, dateStr){
   const head=rows[0].map(norm);
   const I=k=>head.indexOf(k);
   const ix={店:I("店號"),sec:I("SEC"),cat:I("CAT"),nm:I("品名"),st:I("商品狀態"),rt:I("可否退貨"),
-    dms:I("DMS"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),
+    dms:I("DMS"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),sup:I("供應商編號"),
     s:I("最後一次銷售日"),p:I("最後一次進貨驗收日"),mi:I("最後一次移入日期"),mo:I("最後一次移出日期")};
   const reportInt=(()=>{const p=dateStr.split("/");return (+p[0])*10000+(+p[1])*100+(+p[2]);})();
   const ctx={wk8:minusDays(reportInt,56), d180:minusDays(reportInt,180)};
@@ -323,6 +346,7 @@ function processMaster(rows, dateStr){
   for(let i=1;i<rows.length;i++){
     const row=rows[i]; if(!row||row.length===0) continue;
     const store=parseInt(row[ix.店],10); if(isNaN(store)) continue;
+    if(CG_SET.size){ const sup=parseInt(row[ix.sup],10); if(CG_SET.has(sup)) continue; }   // 排除 CG 廠商
     const rec={store, sec:parseInt(String(row[ix.sec]),10), cat:parseInt(String(row[ix.cat]),10),
       nm:String(row[ix.nm]||"").trim(), st:String(row[ix.st]||"").trim(), rt:String(row[ix.rt]||"").trim(),
       dms:parseFloat(row[ix.dms])||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc],
@@ -544,7 +568,23 @@ document.getElementById("file").addEventListener("change",e=>{
   };
   reader.readAsArrayBuffer(f);
 });
-document.getElementById("histBtn").onclick=()=>{const p=document.getElementById("panel");p.classList.toggle("open");if(p.classList.contains("open"))renderHist();};
+document.getElementById("cgFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+      CG_SET=parseCG(rows);
+      const d=new Date(); CG_UPDATED=d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();
+      cgSaveLocal(); cgPushCloud(); updateCgChip();
+      alert("已載入 CG 名單："+CG_SET.size+" 家廠商。\n請重新上傳當週原始檔，套用排除後重新計算。");
+    }catch(err){ alert("CG 名單解析失敗："+err.message); }
+  };
+  reader.readAsArrayBuffer(f);
+  e.target.value="";
+});
 document.getElementById("pdfBtn").onclick=()=>window.print();
 document.getElementById("expBtn").onclick=()=>{const all=loadAll();const blob=new Blob([JSON.stringify(all[ACTIVE]||[],null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=ACTIVE+"_history.json";a.click();};
@@ -555,7 +595,7 @@ document.getElementById("cloudBtn").onclick=()=>bootstrapToCloud();
 document.getElementById("authBtn").onclick=()=>{ USER?signOut():signIn(); };
 
 document.getElementById("date").value="2026-05-31";
-loadCurrentLocal(); buildTabs(); render(); fbInit();
+loadCurrentLocal(); cgLoadLocal(); updateCgChip(); buildTabs(); render(); fbInit();
 </script>
 </body>
 </html>
