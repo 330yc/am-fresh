@@ -231,9 +231,9 @@ const REPORTS={
     agenda:["每週金額趨勢－全公司、分類","當週金額－分店、分類","當週商品支數－分店、分類","金額 TOP 20 明細"],
     trendTitle:"一、每週金額趨勢－全公司、分類",
     storeTitle:"二、當週金額－分店、分類",
-    filterText:["篩選條件","1. 銷售 / 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ＜ 0.1","6. 有國際條碼","＊排除 CG 廠商名單"],
+    filterText:["篩選條件","1. 銷售 且 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ≤ 0.1","6. 有國際條碼","＊排除 CG 廠商名單"],
     layout:"countTop20",
-    filter:(r,c)=> (recent(r.s,c.wk8)||recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<0.1&&hasBarcode(r.bc),
+    filter:(r,c)=> (recent(r.s,c.wk8)&&recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<=0.1&&hasBarcode(r.bc),
   },
   expiry:{
     label:"屆期風險", title:"有屆期風險生鮮庫存",
@@ -242,7 +242,7 @@ const REPORTS={
     storeTitle:"二、進貨（移入）逾 180 天商品金額－分店、分類",
     filterText:["篩選條件","1. 進貨 / 移入日 ＞ 180 天","2. 庫存數 ＞ 0","3. CAT ≠ 930、338","＊排除 CG 廠商名單"],
     layout:"topTable",
-    filter:(r,c)=> old(r.p,c.d180)&&old(r.mi,c.d180)&&r.qty>0&&!([930,338].includes(r.cat)),
+    filter:(r,c)=> oldE(r.p,c.d180)&&oldE(r.mi,c.d180)&&r.qty>0&&!([930,338].includes(r.cat)),
   },
 };
 const ORDER=["inactive","lowTurn","expiry"];
@@ -250,7 +250,8 @@ let ACTIVE="inactive";
 let CURRENT={};  // {report: aggregates}
 
 /* 日期工具：YYYYMMDD int */
-function old(dateInt, cutInt){ return (!dateInt) || dateInt < cutInt; }     // 距今 > 門檻（含 0/空）
+function old(dateInt, cutInt){ return (!dateInt) || dateInt < cutInt; }     // 距今 > 門檻（嚴格；含 0/空）
+function oldE(dateInt, cutInt){ return (!dateInt) || dateInt <= cutInt; }    // 距今 ≥ 門檻（含邊界；屆期用）
 function recent(dateInt, cutInt){ return dateInt && dateInt >= cutInt; }    // 距今 < 門檻
 function hasBarcode(bc){ const s=String(bc||"").trim(); return s.length>0 && s!=="0" && !s.startsWith("200"); } // 排除店內碼(200開頭)
 function ymd(d){ return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
