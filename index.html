@@ -60,6 +60,8 @@
   .menu .mbtn{display:block; width:calc(100% - 12px); margin:2px 6px; text-align:center;}
   .menu input[type=date]{padding:6px 9px; font-size:12px;}
   .menu .acct{font-size:12px; color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;}
+  body:not(.is-admin) .admin-only{ display:none !important; }
+  #loginBox{ padding:2px 0 4px; }
 
   .panel{background:#fff; border-bottom:1px solid #e6e2d8; padding:0 22px; max-height:0; overflow:hidden; transition:max-height .25s, padding .25s;}
   .panel.open{max-height:430px; padding:16px 22px; overflow:auto;}
@@ -150,7 +152,7 @@
   <div class="tabs" id="tabs"></div>
   <div class="spacer"></div>
   <span id="status" class="status"></span>
-  <label class="btn ghost">上傳原始檔
+  <label class="btn ghost admin-only">上傳原始檔
     <input id="file" type="file" accept=".xlsx,.xls" hidden>
   </label>
   <button class="btn" id="pdfBtn">下載 PDF</button>
@@ -159,19 +161,28 @@
     <button class="btn sec iconbtn" id="gearBtn" title="設定" aria-label="設定">⚙</button>
     <div class="menu" id="menu">
       <div class="mlabel">帳號</div>
-      <div class="mrow"><span class="acct" id="acctLabel">未登入</span><button class="btn ghost sm" id="authBtn">Google 登入</button></div>
-      <div class="msep"></div>
-      <div class="mlabel">報表日期（上傳時自動由檔名讀取）</div>
-      <div class="mrow"><span style="font-size:12px;color:var(--muted)">手動指定</span><input id="date" type="date"></div>
-      <div class="msep"></div>
-      <div class="mlabel">CG 廠商名單（每月更新）</div>
-      <div class="mrow"><label class="btn ghost sm">上傳 CG 名單<input id="cgFile" type="file" accept=".xlsx,.xls" hidden></label></div>
-      <div class="minfo" id="cgchip">尚未載入 CG 名單</div>
+      <div class="mrow"><span class="acct" id="acctLabel">未登入</span><button class="btn ghost sm" id="authBtn" style="display:none">登出</button></div>
+      <div id="loginBox">
+        <div class="mrow"><input id="vEmail" type="email" placeholder="輸入你的 email" style="flex:1;min-width:0;padding:6px 9px;font-size:12px;border:1px solid #ddd;border-radius:8px"><button class="btn ghost sm" id="vLoginBtn">寄登入連結</button></div>
+        <div class="minfo">閱覽者：輸入 email、收信點連結即可登入（免密碼）。</div>
+        <div class="mrow" style="justify-content:flex-start"><button class="btn ghost sm" id="adminBtn" style="font-size:11px;color:var(--muted)">我是管理者（Google 登入）</button></div>
+      </div>
+      <div class="msep admin-only"></div>
+      <div class="mlabel admin-only">報表日期（上傳時自動由檔名讀取）</div>
+      <div class="mrow admin-only"><span style="font-size:12px;color:var(--muted)">手動指定</span><input id="date" type="date"></div>
+      <div class="msep admin-only"></div>
+      <div class="mlabel admin-only">CG 廠商名單（每月更新）</div>
+      <div class="mrow admin-only"><label class="btn ghost sm">上傳 CG 名單<input id="cgFile" type="file" accept=".xlsx,.xls" hidden></label></div>
+      <div class="minfo admin-only" id="cgchip">尚未載入 CG 名單</div>
       <div class="msep"></div>
       <button class="btn ghost sm mbtn" id="histBtn">歷史資料</button>
+      <div class="msep admin-only"></div>
+      <div class="mlabel admin-only">管理閱覽者（每行一個 email）</div>
+      <div class="admin-only" style="padding:2px 11px"><textarea id="viewerList" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;border:1px solid #ddd;border-radius:8px;padding:6px;resize:vertical"></textarea></div>
+      <div class="mrow admin-only"><span class="minfo" id="viewerStatus" style="padding:0"></span><button class="btn ghost sm" id="saveViewersBtn">儲存名單</button></div>
       <div class="msep"></div>
-      <div class="mlabel">目前載入</div>
-      <div class="minfo" id="filechip">尚未上傳原始檔</div>
+      <div class="mlabel admin-only">目前載入</div>
+      <div class="minfo admin-only" id="filechip">尚未上傳原始檔</div>
     </div>
   </div>
 </div>
@@ -179,7 +190,7 @@
 <div class="panel" id="panel">
   <h2 id="panelTitle"></h2>
   <table class="htable" id="histTable"></table>
-  <div class="acts">
+  <div class="acts admin-only">
     <button class="btn ghost" id="expBtn">匯出 JSON</button>
     <label class="btn ghost">匯入 JSON<input id="impFile" type="file" accept=".json" hidden></label>
     <button class="btn ghost" id="cloudBtn" style="border-color:#a8cdd2;">推送歷史到雲端</button>
@@ -286,11 +297,11 @@ function parseCG(rows){ const set=new Set(); rows.forEach(r=>{ const v=parseInt(
 function updateCgChip(){ const el=document.getElementById("cgchip"); if(el) el.textContent = CG_SET.size ? ("CG 名單 "+CG_SET.size+" 家"+(CG_UPDATED?(" · "+CG_UPDATED):"")) : "尚未載入 CG 名單"; }
 async function cgPushCloud(){
   if(!USER||!DB) return;
-  try{ await DB.collection("users").doc(USER.uid).collection("freshInventory").doc("_cg").set({codes:[...CG_SET],count:CG_SET.size,updated:CG_UPDATED}); }catch(e){}
+  try{ await DB.collection("users").doc(ADMIN_UID).collection("freshInventory").doc("_cg").set({codes:[...CG_SET],count:CG_SET.size,updated:CG_UPDATED}); }catch(e){}
 }
 async function cgLoadCloud(){
   if(!USER||!DB) return;
-  try{ const snap=await DB.collection("users").doc(USER.uid).collection("freshInventory").doc("_cg").get();
+  try{ const snap=await DB.collection("users").doc(ADMIN_UID).collection("freshInventory").doc("_cg").get();
     if(snap.exists){ const d=snap.data()||{}; if(Array.isArray(d.codes)){ CG_SET=new Set(d.codes.map(Number)); CG_UPDATED=d.updated||""; cgSaveLocal(); updateCgChip(); } } }catch(e){}
 }
 function sortH(h){ return h.slice().sort((a,b)=> new Date(a.date.replace(/\//g,'-')) - new Date(b.date.replace(/\//g,'-'))); }
@@ -305,22 +316,65 @@ function setStatus(t){ const el=document.getElementById("status"); if(el) el.tex
 function ndClient(d){ const t=new Date(d); return isNaN(+t)?String(d):(t.getFullYear()+"/"+(t.getMonth()+1)+"/"+t.getDate()); }
 
 let DB=null, AUTH=null, USER=null;
+const ADMIN_UID="rPFs326yPkegB1a7a3CCFTNazD93";          // 管理者（你）的帳號
+const VIEWER_RETURN_URL="https://330yc.github.io/am-fresh/";
+let ROLE="none";                                         // admin | viewer | none
+function computeRole(){ ROLE = !USER ? "none" : (USER.uid===ADMIN_UID ? "admin" : "viewer"); }
 function fbInit(){
-  if(!window.firebase || !firebaseConfig.apiKey){ render(); return; }
+  if(!window.firebase || !firebaseConfig.apiKey){ ROLE="admin"; applyRole(); render(); return; }
   try{
     firebase.initializeApp(firebaseConfig);
     AUTH=firebase.auth(); DB=firebase.firestore();
-    AUTH.onAuthStateChanged(u=>{ USER=u||null; updateAuthUI(); if(USER) loadFromCloud(); else render(); });
-  }catch(e){ render(); }
+    if(AUTH.isSignInWithEmailLink(window.location.href)){          // 從信件連結進來→完成登入
+      let em=localStorage.getItem("emailForSignIn")||"";
+      if(!em) em=(window.prompt("請輸入你申請登入連結時用的 email：")||"");
+      if(em){ AUTH.signInWithEmailLink(em.trim().toLowerCase(), window.location.href)
+        .then(()=>{ localStorage.removeItem("emailForSignIn"); history.replaceState(null,"",window.location.pathname); })
+        .catch(()=>setStatus("登入連結無效或已過期，請重新申請")); }
+    }
+    AUTH.onAuthStateChanged(u=>{ USER=u||null; computeRole(); updateAuthUI(); applyRole(); if(USER) loadFromCloud(); else render(); });
+  }catch(e){ ROLE="admin"; applyRole(); render(); }
 }
 function signIn(){ if(!AUTH) return; AUTH.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(()=>setStatus("登入失敗")); }
+function signInViewer(){
+  if(!AUTH){ alert("尚未連上伺服器，請稍後再試"); return; }
+  const em=(document.getElementById("vEmail").value||"").trim().toLowerCase();
+  if(!/^.+@.+\..+$/.test(em)){ alert("請輸入有效的 email"); return; }
+  AUTH.sendSignInLinkToEmail(em,{url:VIEWER_RETURN_URL,handleCodeInApp:true}).then(()=>{
+    localStorage.setItem("emailForSignIn",em);
+    alert("已寄出登入連結到：\n"+em+"\n\n請到信箱點該連結即可登入（連結有時效，請盡快點）。\n若沒收到，請查看垃圾信件匣。");
+  }).catch(e=>alert("寄送失敗："+e.message));
+}
 function signOut(){ if(AUTH) AUTH.signOut(); }
 function updateAuthUI(){
-  const b=document.getElementById("authBtn"); const al=document.getElementById("acctLabel"); if(!b) return;
-  if(USER){ b.textContent="登出"; if(al) al.textContent=USER.email||"已登入"; setStatus("已登入"); }
-  else{ b.textContent="Google 登入"; if(al) al.textContent="未登入"; setStatus("未登入（本機模式）"); }
+  const al=document.getElementById("acctLabel"); if(!al) return;
+  if(USER) al.textContent=(USER.email||"已登入")+(ROLE==="admin"?"（管理者）":"（閱覽）");
+  else al.textContent="未登入";
 }
-function docRef(report){ return DB.collection("users").doc(USER.uid).collection("freshInventory").doc(report); }
+function applyRole(){
+  document.body.classList.toggle("is-admin", ROLE==="admin");
+  const lb=document.getElementById("loginBox"), ab=document.getElementById("authBtn");
+  if(lb) lb.style.display = USER ? "none" : "";
+  if(ab) ab.style.display = USER ? "" : "none";
+  if(ROLE==="admin") loadViewers();
+}
+async function loadViewers(){
+  if(ROLE!=="admin"||!DB) return;
+  try{ const s=await DB.collection("users").doc(ADMIN_UID).collection("meta").doc("viewers").get();
+    const em=(s.exists&&Array.isArray((s.data()||{}).emails))?s.data().emails:[];
+    const ta=document.getElementById("viewerList"); if(ta) ta.value=em.join("\n");
+    const st=document.getElementById("viewerStatus"); if(st) st.textContent="目前 "+em.length+" 位";
+  }catch(e){}
+}
+async function saveViewers(){
+  if(ROLE!=="admin"||!DB){ alert("僅管理者可設定"); return; }
+  const raw=(document.getElementById("viewerList").value||"").split(/[\s,;]+/).map(s=>s.trim().toLowerCase()).filter(s=>/^.+@.+\..+$/.test(s));
+  const uniq=[...new Set(raw)];
+  try{ await DB.collection("users").doc(ADMIN_UID).collection("meta").doc("viewers").set({emails:uniq,updated:new Date().toISOString()});
+    const st=document.getElementById("viewerStatus"); if(st) st.textContent="已儲存 "+uniq.length+" 位 ✓";
+  }catch(e){ alert("儲存失敗："+e.message); }
+}
+function docRef(report){ return DB.collection("users").doc(ADMIN_UID).collection("freshInventory").doc(report); }
 async function loadFromCloud(){
   if(!USER||!DB) return;
   try{
@@ -340,7 +394,7 @@ async function loadFromCloud(){
     }
     saveAll(all); saveCurrentLocal(); render(); if(document.getElementById("panel").classList.contains("open")) renderHist();
     setStatus(USER.email||"已同步");
-  }catch(e){ setStatus("雲端讀取失敗，用本機資料"); render(); }
+  }catch(e){ if(ROLE==="viewer") setStatus("此帳號未獲授權閱覽，請聯絡管理者"); else setStatus("雲端讀取失敗，用本機資料"); render(); }
 }
 async function pushReport(r){
   if(!USER||!DB) return;
@@ -601,10 +655,10 @@ function renderHist(){
   const all=loadAll(); const h=sortH(all[ACTIVE]||[]);
   const withTk=h.filter(r=>Array.isArray(r.tk)&&r.tk.length).length;
   document.getElementById("panelTitle").textContent="【"+REPORTS[ACTIVE].label+"】歷史資料（單位：千元）— 共 "+h.length+" 週，其中 "+withTk+" 週已存榜單資料（供 TOP 標記比對）";
-  let html="<tr><th>週次</th>"+CANON.map(c=>"<th>"+String(c[0]).padStart(3,"0")+" "+c[1]+"</th>").join("")+"<th>合計</th><th>榜單</th><th>刪</th></tr>";
+  let html="<tr><th>週次</th>"+CANON.map(c=>"<th>"+String(c[0]).padStart(3,"0")+" "+c[1]+"</th>").join("")+"<th>合計</th><th>榜單</th>"+(ROLE==="admin"?"<th>刪</th>":"")+"</tr>";
   h.forEach(r=>{ const tot=SECS.reduce((a,s)=>a+(r[s]||0),0);
     const tk=(Array.isArray(r.tk)&&r.tk.length)?("<span style='color:#1f8a70;font-weight:700'>✓ "+r.tk.length+"</span>"):"<span style='color:#c0392b'>—</span>";
-    html+="<tr><td>"+r.date+"</td>"+SECS.map(s=>"<td>"+(r[s]||0)+"</td>").join("")+"<td><b>"+tot+"</b></td><td>"+tk+"</td><td class='del' data-d='"+r.date+"'>✕</td></tr>";});
+    html+="<tr><td>"+r.date+"</td>"+SECS.map(s=>"<td>"+(r[s]||0)+"</td>").join("")+"<td><b>"+tot+"</b></td><td>"+tk+"</td>"+(ROLE==="admin"?("<td class='del' data-d='"+r.date+"'>✕</td>"):"")+"</tr>";});
   const t=document.getElementById("histTable"); t.innerHTML=html;
   t.querySelectorAll(".del").forEach(d=>d.onclick=()=>{ if(confirm("刪除 "+REPORTS[ACTIVE].label+" 的 "+d.dataset.d+"？")){
     const all=loadAll(); all[ACTIVE]=(all[ACTIVE]||[]).filter(r=>r.date!==d.dataset.d); saveAll(all); renderHist(); render();}});
@@ -694,13 +748,16 @@ document.getElementById("impFile").addEventListener("change",e=>{const f=e.targe
   r.onload=ev=>{try{const j=JSON.parse(ev.target.result);if(Array.isArray(j)){const all=loadAll();all[ACTIVE]=sortH(j);saveAll(all);renderHist();render();alert("已匯入 "+j.length+" 週至「"+REPORTS[ACTIVE].label+"」");}}catch(err){alert("格式錯誤");}};r.readAsText(f);});
 document.getElementById("clrBtn").onclick=()=>{if(confirm("清空「"+REPORTS[ACTIVE].label+"」全部歷史？")){const all=loadAll();all[ACTIVE]=[];saveAll(all);renderHist();render();}};
 document.getElementById("cloudBtn").onclick=()=>bootstrapToCloud();
-document.getElementById("authBtn").onclick=()=>{ USER?signOut():signIn(); };
+document.getElementById("authBtn").onclick=signOut;
+document.getElementById("adminBtn").onclick=signIn;
+document.getElementById("vLoginBtn").onclick=signInViewer;
+document.getElementById("saveViewersBtn").onclick=saveViewers;
 document.getElementById("histBtn").onclick=()=>{ document.getElementById("menu").classList.remove("open"); const p=document.getElementById("panel"); p.classList.toggle("open"); if(p.classList.contains("open")) renderHist(); };
 document.getElementById("gearBtn").onclick=(e)=>{ e.stopPropagation(); document.getElementById("menu").classList.toggle("open"); };
 document.addEventListener("click",(e)=>{ const w=document.querySelector(".menuwrap"); if(w && !w.contains(e.target)) document.getElementById("menu").classList.remove("open"); });
 
 document.getElementById("date").value="2026-05-31";
-loadCurrentLocal(); cgLoadLocal(); updateCgChip(); buildTabs(); render(); fbInit();
+loadCurrentLocal(); cgLoadLocal(); updateCgChip(); buildTabs(); render(); applyRole(); fbInit();
 </script>
 </body>
 </html>
