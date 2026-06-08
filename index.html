@@ -1,4 +1,206 @@
- ="btn ghost" id="clrBtn" style="color:#BB3E03;border-color:#e0b8a8;">清空此報告歷史</button>
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生鮮異常庫存週報</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#23282b; --line:#00606E; --line2:#0A8090; --muted:#8a949a; --grid:#e3e7e9;
+    --bg:#F4F2EC; --panel:#ffffff; --soft:#fbfaf6;
+    --font:"Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei","PingFang TC","Heiti TC",sans-serif;
+    --latin:"Noto Sans TC","Noto Sans CJK TC",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); font-family:var(--font); color:var(--ink); -webkit-font-smoothing:antialiased;}
+
+  .controls{
+    position:sticky; top:0; z-index:50; background:rgba(255,255,255,.92); backdrop-filter:blur(8px);
+    border-bottom:1px solid #e6e2d8; padding:12px 22px; display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+    box-shadow:0 2px 14px rgba(0,40,50,.05);
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.15; margin-right:6px;}
+  .brand b{font-size:15px; font-weight:800; color:var(--line); letter-spacing:.5px;}
+  .brand span{font-size:10.5px; color:var(--muted); letter-spacing:1.5px; font-family:var(--latin); font-weight:600;}
+  .tabs{display:flex; gap:4px; background:#ece8de; padding:4px; border-radius:11px;}
+  .tab{border:none; background:transparent; padding:8px 16px; border-radius:8px; font-family:var(--font);
+    font-size:13px; font-weight:700; color:#6b7479; cursor:pointer; transition:.18s;}
+  .tab:hover{color:var(--line);}
+  .tab.active{background:var(--line); color:#fff; box-shadow:0 2px 8px rgba(0,96,110,.28);}
+  .spacer{flex:1;}
+  .btn{border:none; border-radius:9px; padding:9px 15px; font-family:var(--font); font-size:12.5px;
+    font-weight:700; cursor:pointer; transition:.15s; color:#fff; background:var(--line);}
+  .btn:hover{filter:brightness(1.08); transform:translateY(-1px);}
+  .btn.ghost{background:#fff; color:var(--line); border:1.5px solid #cfe0e2;}
+  .btn.ghost:hover{background:#f0f8f9;}
+  .btn.sec{background:#5a676c;}
+  input[type=date]{border:1.5px solid #d8d2c4; border-radius:9px; padding:7px 10px; font-family:var(--font); font-size:12.5px; background:#fff;}
+  .filechip{font-size:11.5px; color:var(--muted); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .status{font-size:11.5px; color:var(--line2); font-weight:700;}
+
+  .iconbtn{width:40px; height:40px; padding:0; display:inline-flex; align-items:center; justify-content:center; font-size:17px; line-height:1;}
+  .menuwrap{position:relative;}
+  .menu{position:absolute; top:48px; right:0; width:312px; background:#fff; border:1px solid #e2ded1; border-radius:16px;
+    box-shadow:0 16px 48px rgba(0,40,50,.18); padding:8px; display:none; z-index:70;}
+  .menu.open{display:block;}
+  .menu .mlabel{color:var(--muted); font-size:10.5px; font-weight:800; letter-spacing:.8px; padding:9px 11px 3px;}
+  .menu .mrow{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 11px;}
+  .menu .msep{height:1px; background:#efece3; margin:5px 6px;}
+  .menu .minfo{font-size:11px; color:var(--muted); padding:0 11px 8px; word-break:break-all; line-height:1.4;}
+  .menu .sm{padding:7px 12px; font-size:12px;}
+  .menu .mbtn{display:block; width:calc(100% - 12px); margin:2px 6px; text-align:center;}
+  .menu input[type=date]{padding:6px 9px; font-size:12px;}
+  .menu .acct{font-size:12px; color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px;}
+  body:not(.is-admin) .admin-only{ display:none !important; }
+  #loginBox{ padding:2px 0 4px; }
+  .gate{display:flex; justify-content:center; padding:60px 20px;}
+  .gate-card{background:#fff; border:1px solid #e2ded1; border-radius:18px; box-shadow:0 12px 40px rgba(0,40,50,.10); padding:40px 34px; text-align:center; max-width:440px;}
+  .gate-ic{font-size:40px; margin-bottom:10px;}
+  .gate-t{font-size:17px; font-weight:800; color:var(--ink); margin-bottom:8px;}
+  .gate-s{font-size:13px; color:var(--muted); line-height:1.6;}
+  body.gated #pdfBtn, body.gated #xlsBtn{ display:none; }
+
+  .panel{background:#fff; border-bottom:1px solid #e6e2d8; padding:0 22px; max-height:0; overflow:hidden; transition:max-height .25s, padding .25s;}
+  .panel.open{max-height:430px; padding:16px 22px; overflow:auto;}
+  .panel h2{font-size:12.5px; margin-bottom:10px; color:var(--line);}
+  .htable{width:100%; border-collapse:collapse; font-size:11.5px;}
+  .htable th,.htable td{border-bottom:1px solid #eee; padding:5px 8px; text-align:right; font-variant-numeric:tabular-nums;}
+  .htable th:first-child,.htable td:first-child{text-align:left;}
+  .htable th{color:var(--muted); font-weight:600;}
+  .htable .del{color:#BB3E03; cursor:pointer; font-weight:800; text-align:center;}
+  .panel .acts{margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;}
+
+  .stage{padding:26px 0 70px; display:flex; flex-direction:column; align-items:center; gap:24px;}
+  .holder{position:relative;}
+  .slide{position:relative; width:13.333in; height:7.5in; background:#fff; transform-origin:top left;
+    border-radius:10px; box-shadow:0 10px 34px rgba(0,40,50,.13); overflow:hidden;}
+  .slide .ttl{position:absolute; left:.6in; top:.3in; font-size:28pt; font-weight:900; letter-spacing:.5px;}
+  .slide .rule{position:absolute; left:.6in; top:1.16in; width:12.13in; height:2.5pt;
+    background:linear-gradient(90deg,var(--line),var(--line2));}
+  .slide .unit{position:absolute; font-size:11.5pt; color:#5a676c;}
+  .slide .foot{position:absolute; left:.6in; top:7.06in; font-size:8.5pt; color:#b7bcc0; letter-spacing:.3px;}
+  .slide .pg{position:absolute; right:.5in; top:6.95in; font-size:16pt; font-weight:800; color:var(--line); font-family:var(--latin);}
+
+  .fbox{position:absolute; font-size:12.5pt; line-height:1.5; color:#2c3236;}
+  .fbox b{font-weight:800; color:var(--line);}
+  .fbox .note{color:var(--muted); font-size:11pt;}
+
+  .legend{position:absolute; display:flex; flex-wrap:wrap; gap:6px 16px; font-size:10.5pt;}
+  .legend .it{display:flex; align-items:center; gap:5px;}
+  .legend .sw{width:13px; height:13px; border-radius:3px; display:inline-block;}
+
+  .chart{position:absolute; display:grid; align-items:end;}
+  .chart .barwrap{position:relative; height:100%; display:flex; flex-direction:column; justify-content:flex-end;}
+  .chart .bar{position:relative; margin:0 auto; width:64%; display:flex; flex-direction:column-reverse; height:100%; border-radius:3px 3px 0 0; overflow:hidden;}
+  .chart .seg{display:flex; align-items:center; justify-content:center; font-size:10pt; font-weight:700; overflow:hidden; line-height:1;}
+  .xrow{position:absolute; display:grid; font-size:11.5pt; font-weight:700; text-align:center; color:#3a4145;}
+  .trow{position:absolute; display:grid; font-size:11.5pt; font-weight:800; text-align:center; align-items:center;}
+  .trow .lbl{text-align:left;}
+  .trow .cell{font-variant-numeric:tabular-nums; color:var(--line);}
+
+  .cover{background:var(--soft);}
+  .cover .band{position:absolute; left:0; top:0; width:.32in; height:7.5in; background:linear-gradient(180deg,var(--line),var(--line2));}
+  .cover .kicker{position:absolute; left:1.1in; top:2.5in; font-size:12pt; letter-spacing:4px; color:var(--line2); font-weight:700; font-family:var(--latin);}
+  .cover .ct{position:absolute; left:1.05in; top:2.95in; font-size:44pt; font-weight:900; color:var(--ink); letter-spacing:1px;}
+  .cover .cd{position:absolute; left:1.1in; top:4.15in; font-size:20pt; color:var(--muted);}
+  .cover .ag{position:absolute; left:1.1in; top:5.4in; font-size:15pt; line-height:1.8; color:#3a4145;}
+  .cover .ag .dot{color:var(--line2); font-weight:800;}
+
+  .ttbl{position:absolute; border-collapse:collapse; font-size:10.5pt; font-variant-numeric:tabular-nums;}
+  .ttbl th,.ttbl td{border:1px solid #d8dcde; padding:5px 7px; height:.4in;}
+  .ttbl th{background:var(--line); color:#fff; font-weight:700; text-align:center; font-size:11pt; border-color:var(--line);}
+  .ttbl tr:nth-child(even) td{background:#f7f9f9;}
+  .c-store,.c-st,.c-rt,.c-rank{text-align:center;}
+  .c-name{text-align:left;}
+  .c-amt{text-align:right; font-weight:600;}
+  .pdot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#D62828; margin-right:6px; vertical-align:middle;}
+  .ttbl tr.persist td{background:#fdeeee;}
+  .ttbl tr.persist:nth-child(even) td{background:#fbe6e6;}
+  .ttbl tr.persist td.c-name{font-weight:700; color:#9e1b1b;}
+  .slide .pnote{position:absolute; font-size:10pt; color:#9e1b1b;}
+
+  .mtbl{position:absolute; border-collapse:collapse; font-size:9.5pt; font-variant-numeric:tabular-nums;}
+  .mtbl th,.mtbl td{border:1px solid #d8dcde; padding:3px 5px; text-align:center; height:.34in;}
+  .mtbl th{background:var(--line); color:#fff; font-weight:700;}
+  .mtbl td.cat{text-align:left; font-weight:700;}
+  .mtbl td.cat .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+  .mtbl tr.sum td{background:#eef3f3; font-weight:800;}
+  .mtbl td.tot{font-weight:800; color:var(--line);}
+
+  .placeholder{position:absolute; left:50%; top:55%; transform:translate(-50%,-50%); text-align:center; color:var(--muted);}
+  .placeholder .big{font-size:18pt; font-weight:700; color:#9aa3a8;}
+  .placeholder .sm{font-size:12pt; margin-top:6px;}
+
+  @media print{
+    @page{ size:13.333in 7.5in; margin:0; }
+    html,body{background:#fff;}
+    .controls,.panel{display:none !important;}
+    .stage{padding:0; gap:0;}
+    .holder{height:auto !important; width:auto !important;}
+    .slide{transform:none !important; box-shadow:none; border-radius:0; page-break-after:always; break-after:page;}
+    .slide:last-child{page-break-after:auto;}
+  }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <div class="brand"><b>生鮮異常庫存週報</b></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="spacer"></div>
+  <span id="status" class="status"></span>
+  <label class="btn ghost admin-only">上傳原始檔
+    <input id="file" type="file" accept=".xlsx,.xls" hidden>
+  </label>
+  <button class="btn" id="pdfBtn">下載 PDF</button>
+  <button class="btn ghost" id="xlsBtn">下載 Excel</button>
+  <div class="menuwrap">
+    <button class="btn sec iconbtn" id="gearBtn" title="設定" aria-label="設定">⚙</button>
+    <div class="menu" id="menu">
+      <div class="mlabel">帳號</div>
+      <div class="mrow"><span class="acct" id="acctLabel">未登入</span><button class="btn ghost sm" id="authBtn" style="display:none">登出</button></div>
+      <div id="loginBox">
+        <div class="mrow"><input id="vEmail" type="email" placeholder="輸入你的 email" style="flex:1;min-width:0;padding:6px 9px;font-size:12px;border:1px solid #ddd;border-radius:8px"><button class="btn ghost sm" id="vLoginBtn">寄登入連結</button></div>
+        <div class="minfo">閱覽者：輸入 email、收信點連結即可登入（免密碼）。</div>
+        <div class="mrow" style="justify-content:flex-start"><button class="btn ghost sm" id="adminBtn" style="font-size:11px;color:var(--muted)">我是管理者（Google 登入）</button></div>
+      </div>
+      <div class="msep admin-only"></div>
+      <div class="mlabel admin-only">報表日期（上傳時自動由檔名讀取）</div>
+      <div class="mrow admin-only"><span style="font-size:12px;color:var(--muted)">手動指定</span><input id="date" type="date"></div>
+      <div class="msep admin-only"></div>
+      <div class="mlabel admin-only">CG 廠商名單（每月更新）</div>
+      <div class="mrow admin-only"><label class="btn ghost sm">上傳 CG 名單<input id="cgFile" type="file" accept=".xlsx,.xls" hidden></label></div>
+      <div class="minfo admin-only" id="cgchip">尚未載入 CG 名單</div>
+      <div class="msep"></div>
+      <button class="btn ghost sm mbtn" id="histBtn">歷史資料</button>
+      <div class="msep admin-only"></div>
+      <div class="mlabel admin-only">管理閱覽者（每行一個 email）</div>
+      <div class="admin-only" style="padding:2px 11px"><textarea id="viewerList" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;border:1px solid #ddd;border-radius:8px;padding:6px;resize:vertical"></textarea></div>
+      <div class="mrow admin-only"><span class="minfo" id="viewerStatus" style="padding:0"></span><button class="btn ghost sm" id="saveViewersBtn">儲存名單</button></div>
+      <div class="msep"></div>
+      <div class="mlabel admin-only">目前載入</div>
+      <div class="minfo admin-only" id="filechip">尚未上傳原始檔</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel">
+  <h2 id="panelTitle"></h2>
+  <table class="htable" id="histTable"></table>
+  <div class="acts admin-only">
+    <button class="btn ghost" id="expBtn">匯出 JSON</button>
+    <label class="btn ghost">匯入 JSON<input id="impFile" type="file" accept=".json" hidden></label>
+    <button class="btn ghost" id="cloudBtn" style="border-color:#a8cdd2;">推送歷史到雲端</button>
+    <button class="btn ghost" id="clrBtn" style="color:#BB3E03;border-color:#e0b8a8;">清空此報告歷史</button>
   </div>
 </div>
 
