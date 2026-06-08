@@ -595,10 +595,12 @@ function buildTabs(){
 /* ====== 歷史面板 ====== */
 function renderHist(){
   const all=loadAll(); const h=sortH(all[ACTIVE]||[]);
-  document.getElementById("panelTitle").textContent="【"+REPORTS[ACTIVE].label+"】歷史資料（單位：千元）— 每次上傳自動累積；可刪除或匯出備份";
-  let html="<tr><th>週次</th>"+CANON.map(c=>"<th>"+String(c[0]).padStart(3,"0")+" "+c[1]+"</th>").join("")+"<th>合計</th><th>刪</th></tr>";
+  const withTk=h.filter(r=>Array.isArray(r.tk)&&r.tk.length).length;
+  document.getElementById("panelTitle").textContent="【"+REPORTS[ACTIVE].label+"】歷史資料（單位：千元）— 共 "+h.length+" 週，其中 "+withTk+" 週已存榜單資料（供 TOP 標記比對）";
+  let html="<tr><th>週次</th>"+CANON.map(c=>"<th>"+String(c[0]).padStart(3,"0")+" "+c[1]+"</th>").join("")+"<th>合計</th><th>榜單</th><th>刪</th></tr>";
   h.forEach(r=>{ const tot=SECS.reduce((a,s)=>a+(r[s]||0),0);
-    html+="<tr><td>"+r.date+"</td>"+SECS.map(s=>"<td>"+(r[s]||0)+"</td>").join("")+"<td><b>"+tot+"</b></td><td class='del' data-d='"+r.date+"'>✕</td></tr>";});
+    const tk=(Array.isArray(r.tk)&&r.tk.length)?("<span style='color:#1f8a70;font-weight:700'>✓ "+r.tk.length+"</span>"):"<span style='color:#c0392b'>—</span>";
+    html+="<tr><td>"+r.date+"</td>"+SECS.map(s=>"<td>"+(r[s]||0)+"</td>").join("")+"<td><b>"+tot+"</b></td><td>"+tk+"</td><td class='del' data-d='"+r.date+"'>✕</td></tr>";});
   const t=document.getElementById("histTable"); t.innerHTML=html;
   t.querySelectorAll(".del").forEach(d=>d.onclick=()=>{ if(confirm("刪除 "+REPORTS[ACTIVE].label+" 的 "+d.dataset.d+"？")){
     const all=loadAll(); all[ACTIVE]=(all[ACTIVE]||[]).filter(r=>r.date!==d.dataset.d); saveAll(all); renderHist(); render();}});
@@ -623,7 +625,8 @@ document.getElementById("file").addEventListener("change",e=>{
       CURRENT=processMaster(rows,date);
       saveCurrentLocal();
       buildTabs(); render(); if(document.getElementById("panel").classList.contains("open"))renderHist();
-      pushWeek();   // 已登入則把當週資料＋歷史寫回 Firestore（未登入則跳過）
+      setStatus("✓ 已儲存 "+date+(USER?"（雲端同步中…）":"（本機，未登入雲端）"));
+      pushWeek().then(()=>{ if(USER&&DB) setStatus("✓ 已儲存 "+date+"（已雲端同步）"); });
     }catch(err){ document.getElementById("status").textContent="解析失敗"; alert("解析失敗："+err.message); }
   };
   reader.readAsArrayBuffer(f);
