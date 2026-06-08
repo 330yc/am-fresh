@@ -154,6 +154,7 @@
     <input id="file" type="file" accept=".xlsx,.xls" hidden>
   </label>
   <button class="btn" id="pdfBtn">下載 PDF</button>
+  <button class="btn ghost" id="xlsBtn">下載 Excel</button>
   <div class="menuwrap">
     <button class="btn sec iconbtn" id="gearBtn" title="設定" aria-label="設定">⚙</button>
     <div class="menu" id="menu">
@@ -383,7 +384,7 @@ function processMaster(rows, dateStr){
     const rec={store, sec:parseInt(String(row[ix.sec]),10), cat:parseInt(String(row[ix.cat]),10),
       nm:String(row[ix.nm]||"").trim(), st:String(row[ix.st]||"").trim(), rt:String(row[ix.rt]||"").trim(),
       dms:parseFloat(row[ix.dms])||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc], code:row[ix.code],
-      s:parseInt(row[ix.s],10)||0, p:parseInt(row[ix.p],10)||0, mi:parseInt(row[ix.mi],10)||0, mo:parseInt(row[ix.mo],10)||0};
+      s:parseInt(row[ix.s],10)||0, p:parseInt(row[ix.p],10)||0, mi:parseInt(row[ix.mi],10)||0, mo:parseInt(row[ix.mo],10)||0, raw:row};
     for(const key of ORDER){
       if(!REPORTS[key].filter(rec,ctx)) continue;
       const a=acc[key];
@@ -404,6 +405,7 @@ function processMaster(rows, dateStr){
     const top=a.rows.slice().sort((x,y)=>y.amt-x.amt);
     const t40=top.slice(0,40);
     out[key]={date:dateStr, n:a.rows.length, byCatK, storeCatK, storeCount:a.storeCount, storeTot,
+      cols:head.slice(), top40rows:t40.map(d=>d.raw),
       top40:t40.map(d=>({店:d.store,品名:d.nm,狀態:d.st,退貨:d.rt,金額:Math.round(d.amt),碼:d.code})),
       top20:top.slice(0,20).map((d,i)=>({rank:i+1,品名:d.nm,金額:Math.round(d.amt)}))};
     upsert(key,dateStr,byCatK, t40.map(d=>d.store+"_"+d.code));
@@ -675,6 +677,17 @@ async function downloadPDF(){
   finally{ btn.disabled=false; btn.textContent=old; }
 }
 document.getElementById("pdfBtn").onclick=downloadPDF;
+function downloadExcel(){
+  const cur=CURRENT[ACTIVE];
+  if(!cur || !Array.isArray(cur.top40rows) || !cur.top40rows.length){ alert("目前沒有可匯出的 TOP40 明細，請先上傳當週原始檔。"); return; }
+  if(!window.XLSX){ alert("Excel 元件尚未載入，請重新整理頁面再試。"); return; }
+  const aoa=[cur.cols||[], ...cur.top40rows];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "本週TOP40明細");
+  const dt=cur.date?String(cur.date).replace(/\//g,""):"";
+  XLSX.writeFile(wb, "生鮮異常庫存週報_"+REPORTS[ACTIVE].label+(dt?("_"+dt):"")+"_TOP40明細.xlsx");
+}
+document.getElementById("xlsBtn").onclick=downloadExcel;
 document.getElementById("expBtn").onclick=()=>{const all=loadAll();const blob=new Blob([JSON.stringify(all[ACTIVE]||[],null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=ACTIVE+"_history.json";a.click();};
 document.getElementById("impFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
