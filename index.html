@@ -112,6 +112,11 @@
   .c-store,.c-st,.c-rt,.c-rank{text-align:center;}
   .c-name{text-align:left;}
   .c-amt{text-align:right; font-weight:600;}
+  .pdot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#D62828; margin-right:6px; vertical-align:middle;}
+  .ttbl tr.persist td{background:#fdeeee;}
+  .ttbl tr.persist:nth-child(even) td{background:#fbe6e6;}
+  .ttbl tr.persist td.c-name{font-weight:700; color:#9e1b1b;}
+  .slide .pnote{position:absolute; font-size:10pt; color:#9e1b1b;}
 
   .mtbl{position:absolute; border-collapse:collapse; font-size:9.5pt; font-variant-numeric:tabular-nums;}
   .mtbl th,.mtbl td{border:1px solid #d8dcde; padding:3px 5px; text-align:center; height:.34in;}
@@ -286,9 +291,9 @@ async function cgLoadCloud(){
     if(snap.exists){ const d=snap.data()||{}; if(Array.isArray(d.codes)){ CG_SET=new Set(d.codes.map(Number)); CG_UPDATED=d.updated||""; cgSaveLocal(); updateCgChip(); } } }catch(e){}
 }
 function sortH(h){ return h.slice().sort((a,b)=> new Date(a.date.replace(/\//g,'-')) - new Date(b.date.replace(/\//g,'-'))); }
-function upsert(report,date,byCat){
+function upsert(report,date,byCat,tk){
   const all=loadAll(); let h=(all[report]||[]).filter(r=>r.date!==date);
-  const row={date}; SECS.forEach(s=>row[s]=byCat[s]||0); h.push(row);
+  const row={date}; SECS.forEach(s=>row[s]=byCat[s]||0); if(tk&&tk.length) row.tk=tk; h.push(row);
   all[report]=sortH(h); saveAll(all); return all[report];
 }
 
@@ -325,7 +330,7 @@ async function loadFromCloud(){
       const d=snap.data()||{};
       if(Array.isArray(d.weeks)){
         const byDate={}; (all[r]||[]).forEach(x=>byDate[x.date]=x);     // 以日期合併，雲端優先
-        d.weeks.forEach(x=>{ const dt=ndClient(x.date); const row={date:dt}; SECS.forEach(s=>row[s]=Number(x[s])||0); byDate[dt]=row; });
+        d.weeks.forEach(x=>{ const dt=ndClient(x.date); const row={date:dt}; SECS.forEach(s=>row[s]=Number(x[s])||0); if(Array.isArray(x.tk)) row.tk=x.tk; byDate[dt]=row; });
         all[r]=sortH(Object.values(byDate));
       }
       if(d.current) CURRENT[r]=d.current;                                // 還原當週明細
@@ -337,7 +342,7 @@ async function loadFromCloud(){
 async function pushReport(r){
   if(!USER||!DB) return;
   const all=loadAll();
-  const weeks=(all[r]||[]).map(x=>{ const o={date:x.date}; SECS.forEach(s=>o[s]=x[s]||0); return o; });
+  const weeks=(all[r]||[]).map(x=>{ const o={date:x.date}; SECS.forEach(s=>o[s]=x[s]||0); if(x.tk) o.tk=x.tk; return o; });
   const payload={weeks};
   if(CURRENT[r]) payload.current=CURRENT[r];      // 連同當週明細一起存（有才寫，避免清掉）
   await docRef(r).set(payload,{merge:true});
@@ -364,7 +369,7 @@ function processMaster(rows, dateStr){
   const head=rows[0].map(norm);
   const I=k=>head.indexOf(k);
   const ix={店:I("店號"),sec:I("SEC"),cat:I("CAT"),nm:I("品名"),st:I("商品狀態"),rt:I("可否退貨"),
-    dms:I("DMS"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),sup:I("供應商編號"),
+    dms:I("DMS"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),sup:I("供應商編號"),code:I("店內碼"),
     s:I("最後一次銷售日"),p:I("最後一次進貨驗收日"),mi:I("最後一次移入日期"),mo:I("最後一次移出日期")};
   const reportInt=(()=>{const p=dateStr.split("/");return (+p[0])*10000+(+p[1])*100+(+p[2]);})();
   const ctx={wk8:minusDays(reportInt,56), d180:minusDays(reportInt,180)};
@@ -375,7 +380,7 @@ function processMaster(rows, dateStr){
     if(CG_SET.size){ const sup=parseInt(row[ix.sup],10); if(CG_SET.has(sup)) continue; }   // 排除 CG 廠商
     const rec={store, sec:parseInt(String(row[ix.sec]),10), cat:parseInt(String(row[ix.cat]),10),
       nm:String(row[ix.nm]||"").trim(), st:String(row[ix.st]||"").trim(), rt:String(row[ix.rt]||"").trim(),
-      dms:parseFloat(row[ix.dms])||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc],
+      dms:parseFloat(row[ix.dms])||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc], code:row[ix.code],
       s:parseInt(row[ix.s],10)||0, p:parseInt(row[ix.p],10)||0, mi:parseInt(row[ix.mi],10)||0, mo:parseInt(row[ix.mo],10)||0};
     for(const key of ORDER){
       if(!REPORTS[key].filter(rec,ctx)) continue;
@@ -395,10 +400,11 @@ function processMaster(rows, dateStr){
     const storeCatK={}; STORE_ORDER.forEach(st=>{storeCatK[st]=Object.fromEntries(SECS.map(s=>[s,k(a.storeCat[st][s])]));});
     const storeTot=Object.fromEntries(STORE_ORDER.map(st=>[st,k(a.storeTot[st])]));
     const top=a.rows.slice().sort((x,y)=>y.amt-x.amt);
+    const t40=top.slice(0,40);
     out[key]={date:dateStr, n:a.rows.length, byCatK, storeCatK, storeCount:a.storeCount, storeTot,
-      top40:top.slice(0,40).map(d=>({店:d.store,品名:d.nm,狀態:d.st,退貨:d.rt,金額:Math.round(d.amt)})),
+      top40:t40.map(d=>({店:d.store,品名:d.nm,狀態:d.st,退貨:d.rt,金額:Math.round(d.amt),碼:d.code})),
       top20:top.slice(0,20).map((d,i)=>({rank:i+1,品名:d.nm,金額:Math.round(d.amt)}))};
-    upsert(key,dateStr,byCatK);
+    upsert(key,dateStr,byCatK, t40.map(d=>d.store+"_"+d.code));
   }
   return out;
 }
@@ -478,13 +484,34 @@ function placeholder(){
   const p=el("div","placeholder"); p.appendChild(el("div","big","尚未上傳原始檔"));
   p.appendChild(el("div","sm","點右上「上傳原始檔」載入當週 Group03，三份報告會一起生成")); return p;
 }
-function topTableBlock(rows,left){
+/* 找出約一個月前（28天）那一週的 TOP40 鍵集合；需該週有 tk 才算 */
+function monthAgoKeys(reportKey, curDate){
+  const all=loadAll(); const h=(all[reportKey]||[]);
+  const cur=new Date(String(curDate).replace(/\//g,'-')); if(isNaN(+cur)) return null;
+  const target=cur.getTime()-28*864e5; let best=null, bestDiff=Infinity;
+  h.forEach(r=>{
+    if(r.date===curDate || !Array.isArray(r.tk) || !r.tk.length) return;
+    const d=new Date(String(r.date).replace(/\//g,'-')); if(isNaN(+d) || d.getTime()>=cur.getTime()) return;
+    const diff=Math.abs(d.getTime()-target);
+    if(diff<bestDiff){ bestDiff=diff; best=r; }
+  });
+  if(best && bestDiff<=18*864e5) return {set:new Set(best.tk), date:best.date, n:best.tk.length};
+  return null;
+}
+function topTableBlock(rows,left,maSet){
   const t=abs(el("table","ttbl"),{left,top:"1.8in"});
   const heads=["店號","品名","狀態","退貨","金額"], cls=["c-store","c-name","c-st","c-rt","c-amt"], w=[".6in","3.1in",".6in",".6in","1.0in"];
   const cg=el("colgroup"); w.forEach(x=>{const c=document.createElement("col");c.style.width=x;cg.appendChild(c);}); t.appendChild(cg);
   const hr=el("tr"); heads.forEach(h=>hr.appendChild(el("th",null,h))); t.appendChild(hr);
-  rows.forEach(r=>{ const tr=el("tr"); const v=[r.店,r.品名,r.狀態,r.退貨,r.金額.toLocaleString()];
-    v.forEach((x,i)=>tr.appendChild(el("td",cls[i],String(x)))); t.appendChild(tr);});
+  rows.forEach(r=>{ const tr=el("tr");
+    const flagged = maSet && maSet.has(r.店+"_"+r.碼);
+    if(flagged) tr.className="persist";
+    const v=[r.店,r.品名,r.狀態,r.退貨,r.金額.toLocaleString()];
+    v.forEach((x,i)=>{ const td=el("td",cls[i]);
+      if(i===1 && flagged){ td.appendChild(el("span","pdot")); td.appendChild(document.createTextNode(String(x))); }
+      else td.textContent=String(x);
+      tr.appendChild(td); });
+    t.appendChild(tr);});
   return t;
 }
 function topSlide(rep,cur,which,page){
@@ -492,8 +519,13 @@ function topSlide(rep,cur,which,page){
   s.appendChild(abs(el("div","unit","單位：元"),{left:".6in",top:"1.4in"}));
   if(!cur){ s.appendChild(placeholder()); return s; }
   const t=cur.top40;
-  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in"));
-  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in"));
+  const ma=monthAgoKeys(ACTIVE, cur.date);
+  let marked=0; if(ma){ const lo=which==="hi"?0:20, hi=which==="hi"?20:40; for(let i=lo;i<hi&&i<t.length;i++){ if(ma.set.has(t[i].店+"_"+t[i].碼)) marked++; } }
+  if(ma){ const note=abs(el("div","pnote"),{left:"3.0in",top:"1.42in",width:"9.7in"});
+    note.innerHTML="<span class='pdot'></span>標記：一個月前（"+ma.date+"）即已在 TOP 榜，問題持續未解決（本頁 "+marked+" 項）";
+    s.appendChild(note); }
+  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in",ma&&ma.set));
+  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in",ma&&ma.set));
   return s;
 }
 /* 低迴轉：支數矩陣表 */
