@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>生鮮異常庫存週報</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -648,7 +650,31 @@ document.getElementById("cgFile").addEventListener("change",e=>{
   reader.readAsArrayBuffer(f);
   e.target.value="";
 });
-document.getElementById("pdfBtn").onclick=()=>window.print();
+async function downloadPDF(){
+  if(!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF){ alert("PDF 元件尚未載入完成，請稍候幾秒或重新整理頁面再試。"); return; }
+  const slides=[...document.querySelectorAll(".stage .slide")];
+  if(!slides.length){ alert("目前沒有可匯出的內容，請先上傳原始檔。"); return; }
+  const jsPDF=window.jspdf.jsPDF;
+  const W=960, H=540, PX=13.333*96, PY=7.5*96;   // PDF 頁面 pt / 投影片像素
+  const btn=document.getElementById("pdfBtn"); const old=btn.textContent; btn.disabled=true;
+  try{
+    const pdf=new jsPDF({orientation:"landscape",unit:"pt",format:[W,H]});
+    for(let i=0;i<slides.length;i++){
+      btn.textContent="產生中 "+(i+1)+"/"+slides.length;
+      const sl=slides[i], holder=sl.parentElement;
+      const sT=sl.style.transform, sR=sl.style.borderRadius, sS=sl.style.boxShadow, hH=holder.style.height;
+      sl.style.transform="scale(1)"; sl.style.borderRadius="0"; sl.style.boxShadow="none"; holder.style.height=PY+"px";
+      const canvas=await html2canvas(sl,{scale:2,width:PX,height:PY,windowWidth:PX,backgroundColor:"#ffffff",useCORS:true,logging:false});
+      sl.style.transform=sT; sl.style.borderRadius=sR; sl.style.boxShadow=sS; holder.style.height=hH;
+      if(i>0) pdf.addPage([W,H],"landscape");
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",0,0,W,H);
+    }
+    const dt=(CURRENT[ACTIVE]&&CURRENT[ACTIVE].date)?String(CURRENT[ACTIVE].date).replace(/\//g,""):"";
+    pdf.save("生鮮異常庫存週報_"+REPORTS[ACTIVE].label+(dt?("_"+dt):"")+".pdf");
+  }catch(e){ alert("PDF 產生失敗："+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+document.getElementById("pdfBtn").onclick=downloadPDF;
 document.getElementById("expBtn").onclick=()=>{const all=loadAll();const blob=new Blob([JSON.stringify(all[ACTIVE]||[],null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=ACTIVE+"_history.json";a.click();};
 document.getElementById("impFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
