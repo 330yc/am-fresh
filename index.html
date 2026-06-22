@@ -256,11 +256,11 @@ const REPORTS={
   },
   lowTurn:{
     label:"低迴轉", title:"生鮮低迴轉庫存情形",
-    agenda:["每週金額趨勢－全公司、分類","當週金額－分店、分類","當週商品支數－分店、分類","金額 TOP 20 明細"],
+    agenda:["每週金額趨勢－全公司、分類","當週金額－分店、分類","金額 TOP 40 明細"],
     trendTitle:"一、每週金額趨勢－全公司、分類",
     storeTitle:"二、當週金額－分店、分類",
     filterText:["篩選條件","1. 銷售 且 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ≤ 0.1","6. 有國際條碼","＊排除 CG 廠商名單"],
-    layout:"countTop20",
+    layout:"topTable",
     filter:(r,c)=> (recent(r.s,c.wk8)&&recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<=0.1&&hasBarcode(r.bc),
   },
   expiry:{
@@ -281,7 +281,11 @@ let CURRENT={};  // {report: aggregates}
 function old(dateInt, cutInt){ return (!dateInt) || dateInt < cutInt; }     // 距今 > 門檻（嚴格；含 0/空）
 function oldE(dateInt, cutInt){ return (!dateInt) || dateInt <= cutInt; }    // 距今 ≥ 門檻（含邊界；屆期用）
 function recent(dateInt, cutInt){ return dateInt && dateInt >= cutInt; }    // 距今 < 門檻
-function hasBarcode(bc){ const s=String(bc||"").trim(); return s.length>0 && s!=="0" && !s.startsWith("200"); } // 排除店內碼(200開頭)
+function hasBarcode(bc){ const s=String(bc||"").trim().replace(/\.0$/,"");
+  if(s.length<8 || s==="0") return false;          // 空白／0／太短
+  if(s[0]==="2") return false;                       // 200–299：店內碼
+  if(s.slice(0,2)==="02" || s.slice(0,2)==="04") return false;  // 020–029、040–049：GS1 限制區(店內碼)
+  return true; }   // 保留 471 與進口國碼(0xx 真UPC、49x、69x、88x、489、955…)
 function ymd(d){ return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); }
 function minusDays(reportInt, days){
   const y=Math.floor(reportInt/10000), m=Math.floor(reportInt/100)%100, dd=reportInt%100;
