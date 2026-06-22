@@ -399,7 +399,8 @@ async function loadFromCloud(){
         d.weeks.forEach(x=>{ const dt=ndClient(x.date); const row={date:dt}; SECS.forEach(s=>row[s]=Number(x[s])||0); if(Array.isArray(x.tk)) row.tk=x.tk; byDate[dt]=row; });
         all[r]=sortH(Object.values(byDate));
       }
-      if(d.current) CURRENT[r]=d.current;                                // 還原當週明細
+      if(typeof d.currentJSON==="string"){ try{ CURRENT[r]=JSON.parse(d.currentJSON); }catch(e){} }  // 還原當週明細（JSON 字串）
+      else if(d.current) CURRENT[r]=d.current;                           // 相容舊資料（物件）
     }
     if(ROLE==="viewer"){ VIEWER_OK=true; VIEWER_DENIED=false; }
     saveAll(all); saveCurrentLocal(); render(); if(document.getElementById("panel").classList.contains("open")) renderHist();
@@ -411,12 +412,14 @@ async function pushReport(r){
   const all=loadAll();
   const weeks=(all[r]||[]).map(x=>{ const o={date:x.date}; SECS.forEach(s=>o[s]=x[s]||0); if(x.tk) o.tk=x.tk; return o; });
   const payload={weeks};
-  if(CURRENT[r]) payload.current=CURRENT[r];      // 連同當週明細一起存（有才寫，避免清掉）
+  if(CURRENT[r]) payload.currentJSON=JSON.stringify(CURRENT[r]);   // 序列化：避免 Firestore 不支援巢狀陣列(top40rows)導致整筆寫入失敗
   await docRef(r).set(payload,{merge:true});
 }
 async function pushAll(){          // 上傳當週後 / 手動推送：把三報告完整歷史寫回雲端
-  if(!USER){ return; }
-  for(const r of ORDER){ try{ await pushReport(r); }catch(e){} }
+  if(!USER){ return {ok:false,reason:"no-user"}; }
+  let err=null;
+  for(const r of ORDER){ try{ await pushReport(r); }catch(e){ err=e; console.error("雲端寫入失敗",r,e); } }
+  return {ok:!err, err};
 }
 async function bootstrapToCloud(){ // 手動：把本機歷史推上雲端
   if(!USER){ alert("請先用右上「Google 登入」登入"); return; }
@@ -424,7 +427,7 @@ async function bootstrapToCloud(){ // 手動：把本機歷史推上雲端
   await pushAll();
   setStatus("已上傳到雲端"); alert("已把目前歷史上傳到 Firestore");
 }
-async function pushWeek(){ await pushAll(); }   // 上傳當週後呼叫
+async function pushWeek(){ return await pushAll(); }   // 上傳當週後呼叫
 
 /* ====== 解析 + 三報告同時彙整 ====== */
 function norm(s){return String(s==null?"":s).replace(/\s+/g,"").trim();}
@@ -708,7 +711,10 @@ document.getElementById("file").addEventListener("change",e=>{
       saveCurrentLocal();
       buildTabs(); render(); if(document.getElementById("panel").classList.contains("open"))renderHist();
       setStatus("✓ 已儲存 "+date+(USER?"（雲端同步中…）":"（本機，未登入雲端）"));
-      pushWeek().then(()=>{ if(USER&&DB) setStatus("✓ 已儲存 "+date+"（已雲端同步）"); });
+      pushWeek().then(res=>{ if(!(USER&&DB)) return;
+        if(res&&res.ok) setStatus("✓ 已儲存 "+date+"（已雲端同步）");
+        else setStatus("⚠ 已存本機，但雲端同步失敗，同事看不到更新（請截圖回報）"+(res&&res.err?"："+(res.err.message||res.err):""));
+      });
     }catch(err){ document.getElementById("status").textContent="解析失敗"; alert("解析失敗："+err.message); }
   };
   reader.readAsArrayBuffer(f);
