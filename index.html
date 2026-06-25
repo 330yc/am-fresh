@@ -125,6 +125,7 @@
   .c-store,.c-st,.c-rt,.c-rank{text-align:center;}
   .c-name{text-align:left;}
   .c-amt{text-align:right; font-weight:600;}
+  .c-num{text-align:right;}
   .pdot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#D62828; margin-right:6px; vertical-align:middle;}
   .ttbl tr.persist td{background:#fdeeee;}
   .ttbl tr.persist:nth-child(even) td{background:#fbe6e6;}
@@ -244,6 +245,20 @@ const STORE={701:"復興",711:"景美",713:"永和",716:"桃園",717:"楊梅",71
 const STORE_ORDER=[701,711,713,716,717,718,724,725,726,727,728,729,731];
 
 /* ====== 三份報告設定 ====== */
+const TOPCOLS_DEFAULT=[
+  {h:"店號",k:"店",cls:"c-store",w:".6in"},
+  {h:"品名",k:"品名",cls:"c-name",w:"3.1in"},
+  {h:"狀態",k:"狀態",cls:"c-st",w:".6in"},
+  {h:"退貨",k:"退貨",cls:"c-rt",w:".6in"},
+  {h:"金額",k:"金額",cls:"c-amt",w:"1.0in",num:true},
+];
+const TOPCOLS_LOWTURN=[
+  {h:"店號",k:"店",cls:"c-store",w:".5in"},
+  {h:"品名",k:"品名",cls:"c-name",w:"2.7in"},
+  {h:"未銷天數",k:"未銷",cls:"c-num",w:".95in",num:true},
+  {h:"庫存量",k:"量",cls:"c-num",w:".9in",num:true},
+  {h:"金額",k:"金額",cls:"c-amt",w:"1.0in",num:true},
+];
 const REPORTS={
   inactive:{
     label:"久不異動", title:"生鮮久不異動庫存情形",
@@ -259,9 +274,9 @@ const REPORTS={
     agenda:["每週金額趨勢－全公司、分類","當週金額－分店、分類","金額 TOP 40 明細"],
     trendTitle:"一、每週金額趨勢－全公司、分類",
     storeTitle:"二、當週金額－分店、分類",
-    filterText:["篩選條件","1. 銷售 且 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ≤ 0.1","6. 有國際條碼","＊排除 CG 廠商名單"],
-    layout:"topTable",
-    filter:(r,c)=> (recent(r.s,c.wk8)&&recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<=0.1&&hasBarcode(r.bc),
+    filterText:["篩選條件","1. 銷售 且 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ≤ 0.1","6. 有國際條碼","7. 未銷天數 ＞ 6 天","＊排除 CG 廠商名單"],
+    layout:"topTable", topCols:TOPCOLS_LOWTURN,
+    filter:(r,c)=> (recent(r.s,c.wk8)&&recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<=0.1&&r.un>6&&hasBarcode(r.bc),
   },
   expiry:{
     label:"屆期風險", title:"有屆期風險生鮮庫存",
@@ -443,7 +458,7 @@ function processMaster(rows, dateStr){
   const head=rows[0].map(norm);
   const I=k=>head.indexOf(k);
   const ix={店:I("店號"),sec:I("SEC"),cat:I("CAT"),nm:I("品名"),st:I("商品狀態"),rt:I("可否退貨"),
-    dms:I("DMS"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),sup:I("供應商編號"),code:I("店內碼"),
+    dms:I("DMS"),un:I("未銷天數"),qty:I("庫存數"),amt:I("庫存金額"),bc:I("國際條碼"),sup:I("供應商編號"),code:I("店內碼"),
     s:I("最後一次銷售日"),p:I("最後一次進貨驗收日"),mi:I("最後一次移入日期"),mo:I("最後一次移出日期")};
   const reportInt=(()=>{const p=dateStr.split("/");return (+p[0])*10000+(+p[1])*100+(+p[2]);})();
   const ctx={wk8:minusDays(reportInt,56), d180:minusDays(reportInt,180)};
@@ -454,7 +469,7 @@ function processMaster(rows, dateStr){
     if(CG_SET.size){ const sup=parseInt(row[ix.sup],10); if(CG_SET.has(sup)) continue; }   // 排除 CG 廠商
     const rec={store, sec:parseInt(String(row[ix.sec]),10), cat:parseInt(String(row[ix.cat]),10),
       nm:String(row[ix.nm]||"").trim(), st:String(row[ix.st]||"").trim(), rt:String(row[ix.rt]||"").trim(),
-      dms:parseFloat(row[ix.dms])||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc], code:row[ix.code],
+      dms:parseFloat(row[ix.dms])||0, un:parseInt(row[ix.un],10)||0, qty:parseFloat(row[ix.qty])||0, amt:parseFloat(row[ix.amt])||0, bc:row[ix.bc], code:row[ix.code],
       s:parseInt(row[ix.s],10)||0, p:parseInt(row[ix.p],10)||0, mi:parseInt(row[ix.mi],10)||0, mo:parseInt(row[ix.mo],10)||0, raw:row};
     for(const key of ORDER){
       if(!REPORTS[key].filter(rec,ctx)) continue;
@@ -477,7 +492,7 @@ function processMaster(rows, dateStr){
     const t40=top.slice(0,40);
     out[key]={date:dateStr, n:a.rows.length, byCatK, storeCatK, storeCount:a.storeCount, storeTot,
       cols:head.slice(), top40rows:t40.map(d=>d.raw),
-      top40:t40.map(d=>({店:d.store,品名:d.nm,狀態:d.st,退貨:d.rt,金額:Math.round(d.amt),碼:d.code})),
+      top40:t40.map(d=>({店:d.store,品名:d.nm,狀態:d.st,退貨:d.rt,量:Math.round(d.qty),未銷:d.un,金額:Math.round(d.amt),碼:d.code})),
       top20:top.slice(0,20).map((d,i)=>({rank:i+1,品名:d.nm,金額:Math.round(d.amt)}))};
     upsert(key,dateStr,byCatK, t40.map(d=>d.store+"_"+d.code));
   }
@@ -573,18 +588,19 @@ function monthAgoKeys(reportKey, curDate){
   if(best && bestDiff<=18*864e5) return {set:new Set(best.tk), date:best.date, n:best.tk.length};
   return null;
 }
-function topTableBlock(rows,left,maSet){
+function topTableBlock(rows,left,maSet,cols){
+  cols = cols || TOPCOLS_DEFAULT;
   const t=abs(el("table","ttbl"),{left,top:"1.8in"});
-  const heads=["店號","品名","狀態","退貨","金額"], cls=["c-store","c-name","c-st","c-rt","c-amt"], w=[".6in","3.1in",".6in",".6in","1.0in"];
-  const cg=el("colgroup"); w.forEach(x=>{const c=document.createElement("col");c.style.width=x;cg.appendChild(c);}); t.appendChild(cg);
-  const hr=el("tr"); heads.forEach(h=>hr.appendChild(el("th",null,h))); t.appendChild(hr);
+  const cg=el("colgroup"); cols.forEach(c=>{const col=document.createElement("col");col.style.width=c.w;cg.appendChild(col);}); t.appendChild(cg);
+  const hr=el("tr"); cols.forEach(c=>hr.appendChild(el("th",null,c.h))); t.appendChild(hr);
   rows.forEach(r=>{ const tr=el("tr");
     const flagged = maSet && maSet.has(r.店+"_"+r.碼);
     if(flagged) tr.className="persist";
-    const v=[r.店,r.品名,r.狀態,r.退貨,r.金額.toLocaleString()];
-    v.forEach((x,i)=>{ const td=el("td",cls[i]);
-      if(i===1 && flagged){ td.appendChild(el("span","pdot")); td.appendChild(document.createTextNode(String(x))); }
-      else td.textContent=String(x);
+    cols.forEach(c=>{ const td=el("td",c.cls);
+      let val=r[c.k]; if(val===undefined||val===null) val="";
+      else if(c.num && typeof val==="number") val=val.toLocaleString();
+      if(c.k==="品名" && flagged){ td.appendChild(el("span","pdot")); td.appendChild(document.createTextNode(String(val))); }
+      else td.textContent=String(val);
       tr.appendChild(td); });
     t.appendChild(tr);});
   return t;
@@ -599,8 +615,8 @@ function topSlide(rep,cur,which,page){
   if(ma){ const note=abs(el("div","pnote"),{left:"3.0in",top:"1.42in",width:"9.7in"});
     note.innerHTML="<span class='pdot'></span>標記：一個月前（"+ma.date+"）即已在 TOP 榜，問題持續未解決（本頁 "+marked+" 項）";
     s.appendChild(note); }
-  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in",ma&&ma.set));
-  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in",ma&&ma.set));
+  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in",ma&&ma.set, rep.topCols));
+  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in",ma&&ma.set, rep.topCols));
   return s;
 }
 /* 低迴轉：支數矩陣表 */
