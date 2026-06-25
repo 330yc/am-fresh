@@ -130,6 +130,10 @@
   .ttbl tr.persist td{background:#fdeeee;}
   .ttbl tr.persist:nth-child(even) td{background:#fbe6e6;}
   .ttbl tr.persist td.c-name{font-weight:700; color:#9e1b1b;}
+  .rdot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#2f9e44; margin-right:6px; vertical-align:middle;}
+  .ttbl tr.canret td{background:#eef7ee;}
+  .ttbl tr.canret:nth-child(even) td{background:#e4f1e4;}
+  .ttbl tr.canret td.c-name{font-weight:700; color:#1f7a3d;}
   .slide .pnote{position:absolute; font-size:10pt; color:#9e1b1b;}
 
   .mtbl{position:absolute; border-collapse:collapse; font-size:9.5pt; font-variant-numeric:tabular-nums;}
@@ -275,7 +279,7 @@ const REPORTS={
     trendTitle:"一、每週金額趨勢－全公司、分類",
     storeTitle:"二、當週金額－分店、分類",
     filterText:["篩選條件","1. 銷售 且 進貨日 ＜ 8 周","2. 庫存數 ＞ 0","3. CAT ≠ 930、338、346、356、358","4. 商品狀態 ≠ NS","5. DMS ≤ 0.1","6. 有國際條碼","7. 未銷天數 ＞ 6 天","＊排除 CG 廠商名單"],
-    layout:"topTable", topCols:TOPCOLS_LOWTURN,
+    layout:"topTable", topCols:TOPCOLS_LOWTURN, mark:"returnable",
     filter:(r,c)=> (recent(r.s,c.wk8)&&recent(r.p,c.wk8))&&r.qty>0&&!([930,338,346,356,358].includes(r.cat))&&r.st!=="NS"&&r.dms<=0.1&&r.un>6&&hasBarcode(r.bc),
   },
   expiry:{
@@ -588,18 +592,18 @@ function monthAgoKeys(reportKey, curDate){
   if(best && bestDiff<=18*864e5) return {set:new Set(best.tk), date:best.date, n:best.tk.length};
   return null;
 }
-function topTableBlock(rows,left,maSet,cols){
+function topTableBlock(rows,left,mark,cols){
   cols = cols || TOPCOLS_DEFAULT;
   const t=abs(el("table","ttbl"),{left,top:"1.8in"});
   const cg=el("colgroup"); cols.forEach(c=>{const col=document.createElement("col");col.style.width=c.w;cg.appendChild(col);}); t.appendChild(cg);
   const hr=el("tr"); cols.forEach(c=>hr.appendChild(el("th",null,c.h))); t.appendChild(hr);
   rows.forEach(r=>{ const tr=el("tr");
-    const flagged = maSet && maSet.has(r.店+"_"+r.碼);
-    if(flagged) tr.className="persist";
+    const flagged = mark && mark.flag(r);
+    if(flagged) tr.className=mark.rowCls;
     cols.forEach(c=>{ const td=el("td",c.cls);
       let val=r[c.k]; if(val===undefined||val===null) val="";
       else if(c.num && typeof val==="number") val=val.toLocaleString();
-      if(c.k==="品名" && flagged){ td.appendChild(el("span","pdot")); td.appendChild(document.createTextNode(String(val))); }
+      if(c.k==="品名" && flagged){ td.appendChild(el("span",mark.dotCls)); td.appendChild(document.createTextNode(String(val))); }
       else td.textContent=String(val);
       tr.appendChild(td); });
     t.appendChild(tr);});
@@ -610,13 +614,24 @@ function topSlide(rep,cur,which,page){
   s.appendChild(abs(el("div","unit","單位：元"),{left:".6in",top:"1.4in"}));
   if(!cur){ s.appendChild(placeholder()); return s; }
   const t=cur.top40;
-  const ma=monthAgoKeys(ACTIVE, cur.date);
-  let marked=0; if(ma){ const lo=which==="hi"?0:20, hi=which==="hi"?20:40; for(let i=lo;i<hi&&i<t.length;i++){ if(ma.set.has(t[i].店+"_"+t[i].碼)) marked++; } }
-  if(ma){ const note=abs(el("div","pnote"),{left:"3.0in",top:"1.42in",width:"9.7in"});
-    note.innerHTML="<span class='pdot'></span>標記：一個月前（"+ma.date+"）即已在 TOP 榜，問題持續未解決（本頁 "+marked+" 項）";
-    s.appendChild(note); }
-  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in",ma&&ma.set, rep.topCols));
-  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in",ma&&ma.set, rep.topCols));
+  const lo=which==="hi"?0:20, hi=which==="hi"?20:40;
+  let mark=null, noteHTML=null;
+  if(rep.mark==="returnable"){                                  // 低迴轉：標示可退貨（可優先退廠）
+    const flag=r=>String(r.退貨||"").trim().toUpperCase()==="Y";
+    mark={flag, rowCls:"canret", dotCls:"rdot"};
+    let cnt=0; for(let i=lo;i<hi&&i<t.length;i++){ if(flag(t[i])) cnt++; }
+    noteHTML="<span class='rdot'></span>標記：可退貨商品，可優先退廠處理（本頁 "+cnt+" 項）";
+  } else {                                                       // 久不異動／屆期：維持「一個月前在榜」
+    const ma=monthAgoKeys(ACTIVE, cur.date);
+    if(ma){ const flag=r=>ma.set.has(r.店+"_"+r.碼);
+      mark={flag, rowCls:"persist", dotCls:"pdot"};
+      let cnt=0; for(let i=lo;i<hi&&i<t.length;i++){ if(flag(t[i])) cnt++; }
+      noteHTML="<span class='pdot'></span>標記：一個月前（"+ma.date+"）即已在 TOP 榜，問題持續未解決（本頁 "+cnt+" 項）";
+    }
+  }
+  if(noteHTML){ const note=abs(el("div","pnote"),{left:"3.0in",top:"1.42in",width:"9.7in"}); note.innerHTML=noteHTML; s.appendChild(note); }
+  s.appendChild(topTableBlock(which==="hi"?t.slice(0,10):t.slice(20,30),".6in",mark, rep.topCols));
+  s.appendChild(topTableBlock(which==="hi"?t.slice(10,20):t.slice(30,40),"6.8in",mark, rep.topCols));
   return s;
 }
 /* 低迴轉：支數矩陣表 */
